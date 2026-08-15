@@ -13,7 +13,7 @@
         "dev": "node server.js",
         "build:tools": "node scripts/gen-extended-tools.js",
         "lint": "node scripts/check-refs.js",
-        "test": "node scripts/check-refs.js && node scripts/gen-extended-tools.js --check && node --test \"tests/**/*.test.js\""
+        "test": "node scripts/check-refs.js && node scripts/gen-extended-tools.js --check && node --test"
     },
     "keywords": [
         "ai",
