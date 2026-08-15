@@ -25,7 +25,15 @@ const TricorderSetup = (() => {
     let state = null;
     let onFinish = null;
 
-    // Per-runtime instructions. `check` is what step 3 probes by default.
+    // Per-runtime instructions, written for the model this agent targets:
+    // Qwen3.8-27B. Every command below sizes the context deliberately — the
+    // stock window on each of these runtimes is far shorter than the model
+    // supports, and a 27B agentic model on an 8K window spends its whole life
+    // being trimmed.
+    //
+    // `npm run setup` prints the same instructions from server/model-profiles.js
+    // with the quant sized to the memory the host actually has. This copy is
+    // the version for someone who arrived in the browser first.
     const RUNTIMES = [
         {
             id: 'lmstudio',
@@ -34,11 +42,11 @@ const TricorderSetup = (() => {
             url: 'http://127.0.0.1:1234',
             steps: [
                 'Download and install LM Studio from <a href="https://lmstudio.ai" target="_blank" rel="noopener noreferrer">lmstudio.ai</a>.',
-                'Open the <strong>Discover</strong> tab and download <strong>Qwen3 8B</strong> (a Q4_K_M quant is a good balance of speed and quality — about 5 GB).',
+                'Open the <strong>Discover</strong> tab and download <strong>Qwen3.8-27B</strong> — the Q4_K_M quant is about 16 GB and is the best quality per gigabyte.',
                 'Go to the <strong>Developer</strong> tab and press <strong>Start Server</strong>. Leave the port at 1234.',
-                'Load the model there, and turn on <strong>tool use</strong> if your build offers the toggle.',
+                'Load the model, raise its context length (65536 is a good starting point), and turn on <strong>tool use</strong> if your build offers the toggle.',
             ],
-            code: 'lms server start\nlms load qwen3-8b',
+            code: 'lms get lmstudio-community/Qwen3.8-27B-GGUF\nlms server start\nlms load qwen3.8-27b --context-length 65536',
             codeNote: 'Or, if you prefer the command line:',
         },
         {
@@ -48,11 +56,11 @@ const TricorderSetup = (() => {
             url: 'http://127.0.0.1:8080',
             steps: [
                 'Install llama.cpp (<code>brew install llama.cpp</code>, your package manager, or a release build from <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noopener noreferrer">GitHub</a>).',
-                'Download a Qwen3 8B GGUF, e.g. from <code>Qwen/Qwen3-8B-GGUF</code> on Hugging Face.',
-                'Start the server with the command below. <strong><code>--jinja</code> is required</strong> — it is what enables tool calling.',
-                'Leave it running. Tricorder Agent talks to it on port 8080.',
+                'Start the server with the command below — <code>-hf</code> downloads the GGUF on first run.',
+                '<strong><code>--jinja</code> is required</strong>: it applies the model\'s chat template, which is what enables tool calling. Without it the agent chats but never acts.',
+                '<code>--mmproj</code> loads the vision tower. Leave it off and image turns silently answer from the text alone.',
             ],
-            code: 'llama-server \\\n  -m qwen3-8b-q4_k_m.gguf \\\n  -c 16384 \\\n  --jinja \\\n  --port 8080',
+            code: 'llama-server \\\n  -hf ggml-org/Qwen3.8-27B-GGUF:Q4_K_M \\\n  --mmproj-url https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/main/mmproj-Qwen3.8-27B-Q8_0.gguf \\\n  -c 65536 \\\n  --jinja \\\n  --port 8080',
             codeNote: 'Start it like this:',
         },
         {
@@ -63,12 +71,17 @@ const TricorderSetup = (() => {
             steps: [
                 'Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">ollama.com</a>.',
                 'Pull the model, then leave the server running.',
+                '<code>OLLAMA_CONTEXT_LENGTH</code> matters: the default window is a fraction of what Qwen3.8 supports, and the agent notices immediately.',
                 'Ollama exposes an OpenAI-compatible API on port 11434, which is what this app uses.',
             ],
-            code: 'ollama pull qwen3:8b\nollama serve',
+            code: 'ollama pull qwen3.8:27b\nOLLAMA_CONTEXT_LENGTH=65536 ollama serve',
             codeNote: 'Then run:',
         },
     ];
+
+    // What the server recommends, filled in from /api/setup/detect so this
+    // wizard and `npm run setup` never disagree about which model to name.
+    let recommended = null;
 
     let step = 0;
     let runtime = RUNTIMES[0];
@@ -118,13 +131,43 @@ const TricorderSetup = (() => {
             <ol>${runtime.steps.map((s) => `<li>${s}</li>`).join('')}</ol>
             <p>${runtime.codeNote}</p>
             <pre>${TricorderMarkdown.escapeHtml(runtime.code)}</pre>
-            <p><strong>Which model?</strong> This agent is tuned for <strong>Qwen3 8B</strong> — it calls tools
-               reliably, thinks step by step, and fits in about 6 GB of VRAM (or runs on CPU, slower).
-               Anything with solid tool-calling works: Qwen3 14B/30B if you have the memory,
-               Llama 3.1 8B, or Mistral Small.</p>
+            <p><strong>Which model?</strong> This agent targets <strong>Qwen3.8-27B</strong> — native tool
+               calling, a 256K context window, vision, and reasoning depth that is steerable per
+               request. A Q4_K_M quant is about 16 GB, so it wants roughly 20 GB of VRAM or unified
+               memory; it runs on CPU, slowly.</p>
+            <p>Short on memory? Anything with solid tool-calling still works — Qwen3.6-27B, a smaller
+               Qwen3.8, Llama 3.1 8B, or Mistral Small. A model <em>without</em> tool calling will hold a
+               conversation and never touch a file.</p>
+            <p class="setup-tip">Prefer the terminal? <code>npm run setup</code> does all of this from the
+               host: it sizes the quant and the context window to the memory you actually have, then
+               proves the model can call a tool before you open a chat.</p>
         `);
         el.next.textContent = 'It is running — connect';
         el.next.disabled = false;
+    }
+
+    /* Model dropdown, ordered by how well each loaded model suits this agent.
+       The server scores them (server/model-profiles.js) so the ranking and the
+       wording match what `npm run setup` prints on the host. A backend that
+       predates the scoring, or one probed before it existed, just falls back to
+       the raw list. */
+    function modelOptions(backend, selected) {
+        const ranked = backend.ranked && backend.ranked.length
+            ? backend.ranked
+            : (backend.models || []).map((id) => ({ id }));
+        return ranked.map((r) => {
+            const label = r.tier && r.tier !== 'unknown' ? `${r.id} — ${r.tier}` : r.id;
+            return `<option value="${TricorderMarkdown.escapeHtml(r.id)}" ${r.id === selected ? 'selected' : ''}>${TricorderMarkdown.escapeHtml(label)}</option>`;
+        }).join('');
+    }
+
+    /* One line about the model that is actually selected — the score's own
+       reasoning where we have it, and the recommendation where we do not. */
+    function modelNote(backend, selected) {
+        const entry = (backend.ranked || []).find((r) => r.id === selected);
+        if (entry && entry.note) return entry.note;
+        if (recommended) return `Any model with tool-calling support works. ${recommended.label} is what this agent targets.`;
+        return 'Any model with tool-calling support works.';
     }
 
     /* ── Step 3: connect ──────────────────────────────────────────────── */
@@ -141,13 +184,18 @@ const TricorderSetup = (() => {
             found = { backends: [], error: err.message };
         }
 
+        recommended = found.recommended || recommended;
         const list = (found.backends || []);
         const online = list.filter((b) => b.online);
         // Prefer the runtime the user picked; otherwise anything that answered.
         const preferred = online.find((b) => b.id === runtime.id) || online[0] || null;
         if (preferred) {
             chosenUrl = preferred.url;
-            chosenModel = chosenModel || (preferred.models && preferred.models[0]) || '';
+            // Preselect the BEST loaded model, not the first one the backend
+            // happened to list. With a chat model and an embedding model both
+            // loaded — the normal LM Studio setup — "first" is a coin flip, and
+            // landing on the embedding model looks like the agent is broken.
+            chosenModel = chosenModel || (preferred.best && preferred.best.id) || (preferred.models && preferred.models[0]) || '';
             probeResult = preferred;
         }
 
@@ -179,9 +227,9 @@ const TricorderSetup = (() => {
             <label class="field">
                 <span class="label">Model</span>
                 <select id="setup-model">
-                    ${preferred.models.map((m) => `<option value="${TricorderMarkdown.escapeHtml(m)}" ${m === chosenModel ? 'selected' : ''}>${TricorderMarkdown.escapeHtml(m)}</option>`).join('')}
+                    ${modelOptions(preferred, chosenModel)}
                 </select>
-                <small>${/qwen3/i.test(chosenModel) ? 'Qwen3 detected — that is what this agent is tuned for.' : 'Any model with tool-calling support works.'}</small>
+                <small>${TricorderMarkdown.escapeHtml(modelNote(preferred, chosenModel))}</small>
             </label>` : preferred ? `
             <p style="color:var(--red)">The server answered but reports no loaded model.
                Load one and press <strong>Scan again</strong>.</p>` : `

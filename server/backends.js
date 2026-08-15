@@ -9,7 +9,13 @@
 
    This module probes the usual local ports and reports what it found, so
    the first-run setup wizard can say "LM Studio is running on :1234 with
-   qwen3-8b loaded" instead of making a new user guess a URL.
+   qwen3.8-27b loaded" instead of making a new user guess a URL.
+
+   What it finds is scored against server/model-profiles.js, so "found a
+   server" and "found the RIGHT model on it" are two separate answers. A
+   backend that is up with an embedding model loaded is not a backend the
+   agent can use, and saying so here is cheaper than discovering it three
+   tool calls into a conversation.
 
    Zero dependencies, no side effects — pure detection.
    ============================================ */
@@ -18,6 +24,7 @@
 
 const http = require('http');
 const https = require('https');
+const profiles = require('./model-profiles.js');
 
 // Ports we probe on first run, in preference order. `id` is what the setup
 // wizard keys its instructions off; `hint` is what we show when nothing is
@@ -36,7 +43,7 @@ const KNOWN_BACKENDS = [
         label: 'llama.cpp (llama-server)',
         url: 'http://127.0.0.1:8080',
         docs: 'https://github.com/ggml-org/llama.cpp',
-        hint: 'Run: llama-server -m model.gguf -c 16384 --jinja --port 8080',
+        hint: 'Run: llama-server -hf ggml-org/Qwen3.8-27B-GGUF:Q4_K_M -c 65536 --jinja --port 8080',
         toolCalling: 'jinja',
     },
     {
@@ -44,7 +51,7 @@ const KNOWN_BACKENDS = [
         label: 'Ollama',
         url: 'http://127.0.0.1:11434',
         docs: 'https://ollama.com',
-        hint: 'Run: ollama serve  (then: ollama pull qwen3:8b)',
+        hint: 'Run: ollama serve  (then: ollama pull qwen3.8:27b)',
         toolCalling: 'native',
     },
 ];
@@ -93,7 +100,14 @@ async function probe(base, { apiKey = '', timeout = 2500 } = {}) {
     const models = Array.isArray(res.data?.data)
         ? res.data.data.map((m) => m && m.id).filter(Boolean)
         : [];
-    return { url: root, online: true, latencyMs, models };
+    // Ranked once, here, so every consumer — the CLI, the browser wizard, the
+    // /api/setup routes — presents the same order and the same reasoning
+    // instead of each inventing its own idea of "the best one".
+    const ranked = profiles.rankModels(models);
+    return {
+        url: root, online: true, latencyMs, models, ranked,
+        best: ranked.find((r) => r.score > 0) || null,
+    };
 }
 
 // Which known backend does this URL correspond to? Used to pick the right
@@ -121,7 +135,11 @@ async function discover({ configuredUrl = '', apiKey = '', timeout = 2500 } = {}
         return { ...t, ...status, configured: t.url === configuredRoot };
     }));
 
-    const detected = results.find((r) => r.online && r.models.length)
+    // Prefer a backend that has the recommended model loaded over one that is
+    // merely up: with two runtimes running, the wizard should preselect the one
+    // that can actually drive the agent.
+    const detected = results.find((r) => r.online && r.best && r.best.tier === 'recommended')
+        || results.find((r) => r.online && r.models.length)
         || results.find((r) => r.online)
         || null;
 
@@ -129,7 +147,16 @@ async function discover({ configuredUrl = '', apiKey = '', timeout = 2500 } = {}
         detected: detected ? detected.id : null,
         configured: configuredRoot || null,
         backends: results,
+        // What the setup wizard should be steering people towards, so the copy
+        // lives in one place rather than being duplicated in the browser.
+        recommended: {
+            id: profiles.RECOMMENDED.id,
+            label: profiles.RECOMMENDED.label,
+            why: profiles.RECOMMENDED.why,
+            contextNative: profiles.RECOMMENDED.contextNative,
+            repos: profiles.RECOMMENDED.repos,
+        },
     };
 }
 
-module.exports = { KNOWN_BACKENDS, probe, discover, identify, getJson };
+module.exports = { KNOWN_BACKENDS, probe, discover, identify, getJson, profiles };

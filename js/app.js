@@ -432,6 +432,9 @@
         $('set-tools').checked = !!s.internetAccess;
         $('set-confirm').checked = !!s.confirmCodeChanges;
         $('set-compress').checked = !!s.autoCompress;
+        // Defaults ON, so an absent value is not "off" — an older saved
+        // settings blob predates this key entirely.
+        $('set-preserve-thinking').checked = s.preserveThinking !== false;
         $('set-sfx').checked = !!s.sfx;
         refreshModelList();
         refreshInstallInfo();
@@ -453,9 +456,12 @@
             select.appendChild(opt);
         }
         const note = $('set-model-note');
+        // Same wording the setup wizard and `npm run setup` use, because it
+        // comes from the same scorer — see server/model-profiles.js.
         if (!models.length) note.textContent = 'No models listed — is the backend running?';
-        else if (/qwen3/i.test(current)) note.textContent = 'Qwen3 — what this agent is tuned for.';
-        else note.textContent = 'Qwen3 8B is the recommended default for this agent.';
+        else if (/qwen[-_. ]?3\.8[-_. ]?27b/i.test(current)) note.textContent = 'Qwen3.8-27B — what this agent targets.';
+        else if (/qwen[-_. ]?3\.8/i.test(current)) note.textContent = 'Qwen3.8 generation — the right family, a different size.';
+        else note.textContent = 'Qwen3.8-27B is what this agent targets. Anything with tool calling works.';
     }
 
     async function refreshInstallInfo() {
@@ -494,6 +500,7 @@
         $('set-tools').addEventListener('change', (e) => save({ internetAccess: e.target.checked }));
         $('set-confirm').addEventListener('change', (e) => save({ confirmCodeChanges: e.target.checked }));
         $('set-compress').addEventListener('change', (e) => save({ autoCompress: e.target.checked }));
+        $('set-preserve-thinking').addEventListener('change', (e) => save({ preserveThinking: e.target.checked }));
         $('set-sfx').addEventListener('change', (e) => save({ sfx: e.target.checked }));
 
         $('btn-rerun-setup').addEventListener('click', () => {

@@ -7,6 +7,8 @@
         "node": ">=20"
     },
     "scripts": {
+        "setup": "node scripts/setup.js",
+        "doctor": "node scripts/setup.js --check",
         "start": "node scripts/stamp-version.js && node server.js",
         "dev": "node server.js",
         "build:tools": "node scripts/gen-extended-tools.js",
@@ -21,7 +23,8 @@
         "lmstudio",
         "llama.cpp",
         "ollama",
-        "qwen3",
+        "qwen3.8",
+        "qwen",
         "tool-calling",
         "offline"
     ],

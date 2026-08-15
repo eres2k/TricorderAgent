@@ -1,0 +1,78 @@
+name: CI
+
+# The project has no build step and no dependencies, so CI is exactly what a
+# contributor runs locally: the reference check, the schema consistency check,
+# and the test suite. Across the Node versions the project claims to support,
+# because "works on my Node" is the one thing a zero-dependency project can
+# still get wrong.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 is the floor in package.json engines. 22 is what most people have.
+        # 24 catches deprecations before they become breakage.
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No `npm ci` — there is no lockfile and no dependency to install. If one
+      # ever appears, this line failing is the intended alarm.
+      - name: Assert zero dependencies
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const deps = Object.keys(pkg.dependencies || {}).concat(Object.keys(pkg.devDependencies || {}));
+            if (deps.length) { console.error("Dependencies added: " + deps.join(", ")); process.exit(1); }
+            console.log("zero dependencies, as advertised");
+          '
+
+      - name: Reference check
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+  setup-pipeline:
+    name: setup pipeline (no backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The doctor's no-backend path is the one every new user hits first, and
+      # it is the one nothing else exercises. It must produce a report and a
+      # non-zero exit, not a stack trace.
+      - name: Doctor reports a missing backend cleanly
+        run: |
+          set +e
+          node scripts/setup.js --json > report.json
+          status=$?
+          set -e
+          test "$status" -eq 1 || { echo "expected exit 1 with no backend, got $status"; exit 1; }
+          node -e '
+            const r = require("./report.json");
+            if (r.status !== "fail") { console.error("expected a failing status"); process.exit(1); }
+            if (!r.findings.some(f => f.stage === "backend" && f.level === "fail")) {
+              console.error("expected a backend failure finding"); process.exit(1);
+            }
+            if (r.stages.model.profile !== "qwen3.8-27b") {
+              console.error("expected the Qwen3.8-27B profile"); process.exit(1);
+            }
+            console.log("doctor reported cleanly");
+          '
