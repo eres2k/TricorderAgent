@@ -121,7 +121,7 @@
         <label class="field">
             <span class="label">Model</span>
             <select id="set-model"><option value="">auto — first loaded model</option></select>
-            <small id="set-model-note">Qwen3 8B is the recommended default for this agent.</small>
+            <small id="set-model-note">Qwen3.8-27B is what this agent targets.</small>
         </label>
 
         <label class="field">
@@ -145,6 +145,7 @@
             <label class="check"><input id="set-tools" type="checkbox"><span>Tool layer — let the agent act, not just talk</span></label>
             <label class="check"><input id="set-confirm" type="checkbox"><span>Ask before file writes and shell commands</span></label>
             <label class="check"><input id="set-compress" type="checkbox"><span>Auto-compress the conversation near the context limit</span></label>
+            <label class="check"><input id="set-preserve-thinking" type="checkbox"><span>Carry reasoning across tool rounds (Qwen3.8)</span></label>
             <label class="check"><input id="set-sfx" type="checkbox"><span>Sound effects</span></label>
         </div>
 

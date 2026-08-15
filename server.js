@@ -147,12 +147,14 @@ const LLM_TARGET = process.env.LLM_BASE_URL || process.env.LM_STUDIO_URL || 'htt
 // Model id for server-side LLM calls (scheduled tasks, background agents,
 // /api/ai/*). "auto" picks the first model the backend reports as loaded, so a
 // fresh install works without naming anything. Set LLM_MODEL to pin one —
-// e.g. LLM_MODEL=qwen3-8b.
+// e.g. LLM_MODEL=qwen3.8-27b.
 const LLM_MODEL = process.env.LLM_MODEL || 'auto';
 
 // Optional separate model for image/vision turns. Many local setups load a
 // text-only chat model and a vision model side by side; the default LLM_MODEL
 // may not accept images. Falls back to LLM_MODEL when unset.
+// Qwen3.8-27B is natively multimodal, so on the recommended setup this stays
+// empty on purpose — routing images to a second model would be strictly worse.
 const LLM_VISION_MODEL = process.env.LLM_VISION_MODEL || '';
 
 // Per-process secret so the server's own agent loops (scheduled tasks,
@@ -7364,6 +7366,9 @@ async function handleSetupApi(req, res, reqId) {
             configuredByEnv: setupConfiguredByEnv(),
             url: state.url || LLM_TARGET,
             model: state.model || (LLM_MODEL === 'auto' ? '' : LLM_MODEL),
+            // The model this build targets, straight from the profile table, so
+            // the Settings panel and `npm run setup` never name different ones.
+            recommendedModel: backends ? backends.profiles.RECOMMENDED.label : '',
             defaultUrl: LLM_TARGET,
             shellEnabled: SHELL_ENABLED,
             codeExecEnabled: CODE_EXEC_ENABLED,
@@ -8029,10 +8034,17 @@ server.listen(PORT, '0.0.0.0', () => {
     probeLlmBackend().then((models) => {
         if (models && models.length) {
             log('INFO', 'LLM', `✓ Backend reachable at ${LLM_TARGET} — ${models.length} model(s): ${models.slice(0, 3).join(', ')}${models.length > 3 ? ', …' : ''}`);
+            // Say something useful about WHICH model, not just how many. A
+            // backend that is up with only an embedding model loaded reads as
+            // healthy here and then fails on the first tool call.
+            if (backends) {
+                const best = backends.profiles.rankModels(models)[0];
+                if (best && best.score < 100) log('INFO', 'LLM', `${best.id}: ${best.note} Run \`npm run doctor\` for the full picture.`);
+            }
         } else if (models) {
-            log('WARN', 'LLM', `Backend reachable at ${LLM_TARGET} but no model is loaded. Load one (LM Studio: Developer → select a model; llama.cpp: pass -m model.gguf).`);
+            log('WARN', 'LLM', `Backend reachable at ${LLM_TARGET} but no model is loaded. Load one (LM Studio: Developer → select a model; llama.cpp: pass -hf ggml-org/Qwen3.8-27B-GGUF:Q4_K_M).`);
         } else {
-            log('WARN', 'LLM', `No model backend at ${LLM_TARGET}. Open the app — the setup guide will walk you through LM Studio or llama.cpp. Set LLM_BASE_URL in .env if yours lives elsewhere.`);
+            log('WARN', 'LLM', `No model backend at ${LLM_TARGET}. Run \`npm run setup\` for guided setup, or open the app and follow the wizard. Set LLM_BASE_URL in .env if yours lives elsewhere.`);
         }
     }).catch(() => { /* non-fatal */ });
 

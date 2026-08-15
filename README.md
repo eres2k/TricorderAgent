@@ -14,11 +14,16 @@ vanilla browser JavaScript. Clone it, run `node server.js`, open a tab.
 ```bash
 git clone https://github.com/eres2k/TricorderAgent.git
 cd TricorderAgent
-node server.js
+npm run setup
+npm start
 ```
 
-Then open <http://localhost:3000>. A setup guide walks you through connecting a
-model the first time you open it.
+`npm run setup` finds your model server, sizes the model to the memory you
+actually have, proves the backend can call a tool, and writes `.env`. Then open
+<http://localhost:3000>.
+
+Prefer the browser? `node server.js` on its own works too — a setup guide walks
+you through connecting a model the first time you open it.
 
 ---
 
@@ -50,6 +55,8 @@ turn that off), and shows you every tool call as it happens.
   - [LM Studio](https://lmstudio.ai) — a desktop app, easiest if you're new to this
   - [llama.cpp](https://github.com/ggml-org/llama.cpp) — lean and scriptable
   - [Ollama](https://ollama.com) — one command to pull and run
+- **~20 GB of VRAM or unified memory** for the recommended model at Q4_K_M.
+  Less is fine — see below.
 
 **Optional**, each unlocking one capability and degrading cleanly when absent:
 Docker (for `code_exec`), Chrome/Chromium (for browser automation), Python
@@ -57,37 +64,55 @@ Docker (for `code_exec`), Chrome/Chromium (for browser automation), Python
 
 ### Which model?
 
-**Qwen3 8B** is the recommended default — it calls tools reliably, reasons
-step by step, and fits in about 6 GB of VRAM (or runs on CPU, slower). A
-Q4_K_M quant is roughly a 5 GB download.
+**[Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B)** is what this agent
+targets, and the four things it is good at are the four things this agent leans
+on hardest:
 
-Anything with solid tool-calling works: Qwen3 14B or 30B-A3B if you have the
-memory, Llama 3.1 8B, Mistral Small. A model *without* tool-calling support
-will chat but never act.
+| | |
+|---|---|
+| **Native tool calling** | The one hard requirement. A model without it will chat and never act. |
+| **256K context** | Natively (1M with YaRN) — what makes a fifteen-round tool chain over real files possible. |
+| **Steerable reasoning** | `reasoning_effort` at `low` / `medium` / `xhigh`, per request, so the effort tiers in the composer mean something. |
+| **Vision built in** | Screenshots and diagrams, with no second model to load. |
+
+A Q4_K_M quant is about 16 GB, so it wants roughly 20 GB of VRAM or unified
+memory. It runs on CPU, slowly. Short on memory? Qwen3.6-27B, Llama 3.1 8B and
+Mistral Small all work — `npm run setup` will tell you what fits and what it
+costs you.
 
 > **llama.cpp users:** you must pass `--jinja`. Without it the server ignores
-> the `tools` parameter and the agent silently becomes a chatbot.
+> the `tools` parameter and the agent silently becomes a chatbot. `--mmproj` is
+> what loads the vision tower; without it image turns answer from the text
+> alone.
 >
 > ```bash
-> llama-server -m qwen3-8b-q4_k_m.gguf -c 16384 --jinja --port 8080
+> llama-server -hf ggml-org/Qwen3.8-27B-GGUF:Q4_K_M -c 65536 --jinja --port 8080
 > ```
 
 ---
 
 ## Setup
 
-Run it and open the page — the first-run guide detects what you have running,
-tells you exactly what to install if nothing is, and lets you pick a model.
-Nothing else is required.
+```bash
+npm run setup
+```
 
-To configure it by hand instead, copy `.env.example` to `.env` and edit. Every
-setting has a working default; [SETUP.md](SETUP.md) explains the ones worth
-knowing about.
+Seven stages: it checks the host, works out which quant and context window fit
+your memory, probes LM Studio / llama.cpp / Ollama, then sends a **real
+request** to confirm the backend can call a tool, reason at depth, and see an
+image — before writing `.env`. It merges rather than overwrites, so anything
+you have already set survives.
 
 ```bash
-cp .env.example .env
-node server.js
+npm run doctor           # the same diagnosis, writing nothing
+npm run setup -- --yes   # non-interactive
+npm run setup -- --json  # machine-readable, exit 1 on a problem
 ```
+
+Or open the page and let the first-run guide ask the same questions. Or
+configure it by hand: copy `.env.example` to `.env` and edit — every setting
+has a working default, and [SETUP.md](SETUP.md) explains the ones worth
+knowing about.
 
 ---
 
@@ -135,6 +160,7 @@ proxies the model so the browser never fights CORS and never sees an API key.
 ├── server/
 │   ├── tools/              extended tools, one self-contained module each
 │   ├── backends.js         LM Studio / llama.cpp / Ollama detection
+│   ├── model-profiles.js   what each model needs — quants, context, sampling, launch flags
 │   ├── preview-proxy.js    re-serves dev_server previews behind the site login
 │   └── durable-stream.js   generations that survive a dropped connection
 ├── index.html              the app shell
@@ -146,7 +172,10 @@ proxies the model so the browser never fights CORS and never sees an API key.
 │   ├── setup.js            the first-run guide
 │   └── markdown.js         reply rendering
 ├── tests/                  node:test, no test framework to install
-└── scripts/                reference check + schema generator
+└── scripts/
+    ├── setup.js            the setup pipeline — `npm run setup` / `npm run doctor`
+    ├── check-refs.js       the reference check
+    └── gen-extended-tools.js   schema generator
 ```
 
 ### Adding a tool
@@ -199,14 +228,20 @@ lives at `/llm/v1/chat/completions` (standard OpenAI shape, with resume).
 ## Testing
 
 ```bash
-npm test     # reference check, schema consistency, unit + integration tests
-npm run lint # the reference check on its own
+npm test       # reference check, schema consistency, unit + integration tests
+npm run lint   # the reference check on its own
+npm run doctor # test your BACKEND rather than the app
 ```
 
 No test framework to install — it's Node's built-in runner. The suite boots the
 real server against a stub model backend and drives a full tool call through
 it, so the seam between the browser loop and the executor is covered, not just
 each half.
+
+`npm test` covers the app. `npm run doctor` covers the other half of the
+system — the model, the flags it was launched with, and whether the two
+together can call a tool, reason at depth, and see an image. Exits non-zero
+when something is genuinely wrong, so it works in a health check.
 
 `npm run lint` catches the bug class that keeps happening in a no-build-step
 codebase: a function renamed with a call site left behind. `node --check`
@@ -217,15 +252,20 @@ resolution.
 
 ## Troubleshooting
 
+Start with `npm run doctor` — it diagnoses the first three of these directly.
+
 | Symptom | Fix |
 |---|---|
 | "no model server" | Is LM Studio / llama.cpp / Ollama actually running? Click the status pill to retry. |
 | It chats but never uses tools | The model has no tool-calling support, or llama.cpp was started without `--jinja`. |
+| Images are ignored | The vision tower isn't loaded. On llama.cpp, pass `--mmproj`. |
+| Every effort tier thinks as hard as MAX | The backend is dropping `reasoning_effort`. On llama.cpp it only reaches the model through the chat template, which needs `--jinja`. |
 | "Access denied … outside the allowed directories" | Working. Add the directory to `ALLOWED_PATHS` if you meant it. |
 | `code_exec` fails | Docker isn't running. Everything else still works. |
 | Browser tools fail | No Chromium found. Set `CHROMIUM_PATH`, and use Node 21+. |
-| Replies are slow | Normal for a large model on modest hardware. Try a smaller quant, or lower the effort setting in the composer. |
+| Replies are slow | Normal for a 27B model on modest hardware. Add the MTP draft model, try a smaller quant, or lower the effort setting in the composer. |
 | Model dropdown is empty | Nothing is loaded in the backend — load a model, then reopen Settings. |
+| The agent picked your embedding model | `LLM_MODEL=auto` takes whatever the backend lists first. Pin the id, or let `npm run setup` rank them. |
 
 ---
 

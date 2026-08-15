@@ -155,6 +155,7 @@ const TricorderLLM = (() => {
         lmStudioUrl: '',                                    // model backend URL; empty = use the server's configured LLM_BASE_URL
         internetAccess: true,                               // the native tool layer — on by default; this is an agent
         autoCompress: true,                                  // auto-compress conversation when context nears the limit
+        preserveThinking: true,                              // replay the model's own reasoning across tool rounds (Qwen3.8 preserve_thinking)
         confirmCodeChanges: true,                            // ask before executing write_file / file_edit tool calls
         contextWindow: 0,                                    // manual context-window override in tokens (0 = auto-detect)
         sfx: true,                                                // sound effects enabled
@@ -860,6 +861,60 @@ Style:
         repeat_penalty: 1.0,
     };
 
+    // --- Preserved thinking (Qwen3.8) ---------------------------------------
+    // Qwen3.8 renders the reasoning of PREVIOUS assistant messages back into
+    // the prompt when preserve_thinking is on — the vendor default, and the
+    // case it exists for is precisely this agent's tool loop: a fifteen-round
+    // chain where round 9 re-derives what round 3 already worked out, because
+    // the only thing carried forward was the tool call itself. Vendor guidance
+    // calls it out for "decision consistency and reduced redundant reasoning"
+    // in agent scenarios, and for KV-cache utilisation.
+    //
+    // It takes BOTH halves to work. The template flag is one; sending the
+    // reasoning back on the assistant message is the other, and this loop used
+    // to drop it on the floor (`content` and `tool_calls` only). Neither half
+    // alone does anything.
+    //
+    // Unbounded, both halves together are a context bomb: reasoning at xhigh
+    // runs to tens of thousands of tokens in ONE round, and MAX effort allows
+    // fifteen of them inside whatever window the operator could afford. So the
+    // trace is kept for the most recent rounds only, each clipped from the
+    // front (a scratchpad's conclusion is the part worth keeping), and the
+    // flag on the wire always describes what was actually sent.
+    const PRESERVE_THINKING_FAMILIES = new Set(['qwen']);
+    const PRESERVED_THINKING_ROUNDS = 3;
+    const PRESERVED_THINKING_CHARS = 6000;
+
+    function preservesThinking() {
+        return settings.preserveThinking !== false
+            && PRESERVE_THINKING_FAMILIES.has(getModelFamily());
+    }
+
+    // Push one round's assistant message onto the agent-loop history, carrying
+    // its reasoning when preserved thinking is on, and age out the traces that
+    // have fallen out of the window. Returns the pushed message.
+    function pushAssistantRound(agentMessages, message, reasoning) {
+        const text = String(reasoning || '').trim();
+        if (preservesThinking() && text) {
+            // Clip from the front: the tail holds the conclusion the next
+            // round needs, the head holds the exploration it does not.
+            message.reasoning_content = text.length > PRESERVED_THINKING_CHARS
+                ? `[…earlier reasoning trimmed…]\n${text.slice(-PRESERVED_THINKING_CHARS)}`
+                : text;
+        }
+        agentMessages.push(message);
+        // Walk back from the newest, keeping the first N traces and stripping
+        // the rest. Backwards, so the cost is the number KEPT rather than the
+        // length of the whole round history on every single round.
+        let kept = 0;
+        for (let i = agentMessages.length - 1; i >= 0; i--) {
+            const m = agentMessages[i];
+            if (!m || !m.reasoning_content) continue;
+            if (++kept > PRESERVED_THINKING_ROUNDS) delete m.reasoning_content;
+        }
+        return message;
+    }
+
     // Template kwargs for auxiliary one-shot calls (follow-up suggestions,
     // context compression) that must not think: enable_thinking:false covers
     // Qwen-style hybrids, but Muse ignores it and defaults to HIGH — so its
@@ -871,7 +926,10 @@ Style:
         // inert there.
         // 'low', not 'none': see QWEN_REASONING_EFFORT — "none" is not a value
         // Qwen3.8 knows, and an unknown one falls back to its xhigh default.
-        const kwargs = { enable_thinking: false, reasoning_effort: 'low' };
+        // preserve_thinking defaults to ON in Qwen3.8's template. These calls
+        // carry no reasoning of their own and want none replayed, so say so
+        // rather than relying on the history happening to be clean.
+        const kwargs = { enable_thinking: false, reasoning_effort: 'low', preserve_thinking: false };
         if (getModelFamily() === 'muse') kwargs.reasoning_strength = 'low';
         return kwargs;
     }
@@ -1425,6 +1483,15 @@ ${_memoryImprovements}`);
         // the variable ignore it.
         body.chat_template_kwargs.reasoning_effort =
             QWEN_REASONING_EFFORT[body.reasoning_effort] || 'medium';
+        // …and declare whether the reasoning this request DOES carry (see
+        // pushAssistantRound) should be rendered back into the prompt. Sent
+        // explicitly in both directions: the model's own default is ON, so
+        // "off" has to be stated, and "on" is worth stating next to the
+        // messages that depend on it.
+        if (PRESERVE_THINKING_FAMILIES.has(family)) {
+            body.chat_template_kwargs.preserve_thinking =
+                preservesThinking() && params.reasoningEffort !== 'none';
+        }
         // Muse Glimmer: ride the family's own knob along in
         // chat_template_kwargs for llama.cpp-style backends that forward
         // template kwargs (LM Studio instead maps reasoning_effort natively
@@ -1693,9 +1760,22 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
     // nudges on every later request and pollutes saved chats. Strip them before
     // committing the round to history; the real tool_calls/results stay.
     function persistableAgentMessages(agentMessages) {
-        return agentMessages.filter(m =>
-            !(m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('[System:'))
-        );
+        return agentMessages
+            .filter(m =>
+                !(m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('[System:'))
+            )
+            // Preserved thinking is a WITHIN-TURN mechanism (see
+            // pushAssistantRound): it stops round 9 re-deriving round 3. Once
+            // the turn has landed its answer, the scratchpad has served its
+            // purpose and the answer carries the meaning. Left attached, every
+            // trace would ride along in every later request forever —
+            // buildMessages() replays history verbatim — which is the exact
+            // context blowout the round window exists to prevent.
+            .map(m => {
+                if (!m || !m.reasoning_content) return m;
+                const { reasoning_content, ...rest } = m;
+                return rest;
+            });
     }
 
     // Interleaved-thinking nudge (medium/max effort): prompt the model to
@@ -3274,7 +3354,9 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
                         }
                     }
                     if (detectedToolCalls.length > 0) {
-                        agentMessages.push({ role: 'assistant', content: msg.content || null, tool_calls: detectedToolCalls });
+                        pushAssistantRound(agentMessages,
+                            { role: 'assistant', content: msg.content || null, tool_calls: detectedToolCalls },
+                            msg?.reasoning_content || msg?.reasoning || '');
                         toolsUsedThisSession.push(...detectedToolCalls.map(tc => tc.function.name));
                         const toolResults = await executeToolCallsGuarded(detectedToolCalls, null, repeatCache);
                         agentMessages.push(...toolResults);
@@ -3658,16 +3740,19 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
                         const xmlToolMode = usesXmlToolFormat() && result.toolCallSource === 'xml';
 
                         if (xmlToolMode) {
+                            // XML mode replays the assistant turn verbatim —
+                            // its reasoning is already inside the raw text, so
+                            // attaching it again would send it twice.
                             agentMessages.push({
                                 role: 'assistant',
                                 content: result.rawAssistantText || result.text || ''
                             });
                         } else {
-                            agentMessages.push({
+                            pushAssistantRound(agentMessages, {
                                 role: 'assistant',
                                 content: result.text || null,
                                 tool_calls: result.toolCalls
-                            });
+                            }, result.reasoningText);
                         }
 
                         // Identical-rewrite short-circuit: a full write_file whose
@@ -4447,6 +4532,12 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
         for (const msg of messages || []) {
             chars += contentEstChars(msg.content);
             if (msg.tool_calls) chars += JSON.stringify(msg.tool_calls).length;
+            // Preserved thinking (see pushAssistantRound) rides on the message
+            // and is rendered into the prompt by the template, so it costs real
+            // tokens. Bounded, but not small: three rounds of it is thousands.
+            // Missing it here would let the max_tokens clamp overcommit by
+            // exactly the amount preserved thinking added.
+            if (msg.reasoning_content) chars += msg.reasoning_content.length;
             chars += 16; // per-message chat-template overhead
         }
         return chars;
@@ -5520,6 +5611,12 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
             topLevelReasoningEffort,
             pickEffortFallback,
             retryWithFallbackEffort,
+            preservesThinking,
+            noThinkTemplateKwargs,
+            pushAssistantRound,
+            persistableAgentMessages,
+            PRESERVED_THINKING_ROUNDS,
+            PRESERVED_THINKING_CHARS,
         },
         // Internals exposed for tests only (tests/tools/effort_tiers.test.js)
         // — the per-effort agent budgets and the per-turn repeat-call guard.
