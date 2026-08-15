@@ -1,0 +1,29 @@
+{
+    "name": "tricorder-agent",
+    "version": "1.0.0",
+    "description": "A local-first AI agent with real tools \u2014 files, shell, web, code \u2014 running entirely on your own machine. Zero npm dependencies.",
+    "license": "MIT",
+    "engines": {
+        "node": ">=20"
+    },
+    "scripts": {
+        "start": "node scripts/stamp-version.js && node server.js",
+        "dev": "node server.js",
+        "build:tools": "node scripts/gen-extended-tools.js",
+        "lint": "node scripts/check-refs.js",
+        "test": "node scripts/check-refs.js && node scripts/gen-extended-tools.js --check && node --test \"tests/**/*.test.js\""
+    },
+    "keywords": [
+        "ai",
+        "agent",
+        "llm",
+        "local-first",
+        "lmstudio",
+        "llama.cpp",
+        "ollama",
+        "qwen3",
+        "tool-calling",
+        "offline"
+    ],
+    "dependencies": {}
+}

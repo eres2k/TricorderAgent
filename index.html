@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Tricorder Agent — a local-first AI agent that runs on your own machine.">
+<title>Tricorder Agent</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     FIRST-RUN SETUP
+     Rendered by js/setup.js. Hidden until setup.js decides it's needed.
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="setup" class="setup" hidden>
+    <div class="setup-card">
+        <header class="setup-head">
+            <div class="setup-logo">◈</div>
+            <div>
+                <h1>Tricorder Agent</h1>
+                <p id="setup-sub">Let's connect a model. This takes about two minutes.</p>
+            </div>
+        </header>
+        <div id="setup-body" class="setup-body"><!-- steps injected here --></div>
+        <footer class="setup-foot">
+            <button id="setup-skip" class="btn btn-ghost" type="button">Skip for now</button>
+            <div class="setup-foot-right">
+                <button id="setup-back" class="btn btn-ghost" type="button" hidden>Back</button>
+                <button id="setup-next" class="btn btn-primary" type="button">Next</button>
+            </div>
+        </footer>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     APP SHELL
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="app">
+
+    <header class="topbar">
+        <button id="btn-menu" class="icon-btn" type="button" aria-label="Menu" title="Menu">☰</button>
+        <div class="brand">
+            <span class="brand-mark">◈</span>
+            <span class="brand-name">TRICORDER<span class="brand-sub">AGENT</span></span>
+        </div>
+        <button id="status-pill" class="status-pill" type="button" title="Model backend status">
+            <span class="dot" id="status-dot"></span>
+            <span id="status-text">connecting…</span>
+        </button>
+        <div class="topbar-actions">
+            <button id="btn-new" class="icon-btn" type="button" aria-label="New chat" title="New chat">＋</button>
+        </div>
+    </header>
+
+    <main id="transcript" class="transcript" aria-live="polite">
+        <div id="welcome" class="welcome">
+            <div class="welcome-mark">◈</div>
+            <h2>Ready when you are</h2>
+            <p>A local agent with real tools: it reads and writes files, runs commands,
+               searches the web, and remembers what matters — all on your machine.</p>
+            <div class="chips" id="starters">
+                <button class="chip" type="button" data-prompt="What can you do? List your tools by category.">What can you do?</button>
+                <button class="chip" type="button" data-prompt="Show me what's in my workspace directory.">Explore my workspace</button>
+                <button class="chip" type="button" data-prompt="Write a small HTML page with a live clock into the workspace, then serve it with dev_server so I can open it.">Build me a page</button>
+                <button class="chip" type="button" data-prompt="Search the web for the latest news about local LLM inference and summarise the three most interesting items with links.">Research something</button>
+            </div>
+        </div>
+    </main>
+
+    <div id="approvals" class="approvals"><!-- approval cards --></div>
+
+    <footer class="composer">
+        <div class="composer-meta">
+            <button id="btn-tools" class="pill" type="button" title="Toggle the agent's tool layer">
+                <span class="pill-key">TOOLS</span><span class="pill-val" id="tools-val">ON</span>
+            </button>
+            <button id="btn-effort" class="pill" type="button" title="Reasoning effort — how hard the model thinks and how many tool rounds it may take">
+                <span class="pill-key">EFFORT</span><span class="pill-val" id="effort-val">MED</span>
+            </button>
+            <button id="btn-context" class="pill" type="button" title="Context window usage — click to compress the conversation">
+                <span class="pill-key">CTX</span><span class="pill-val" id="context-val">0%</span>
+            </button>
+            <span class="composer-spacer"></span>
+            <span class="stat" id="turn-stat"></span>
+        </div>
+        <div class="composer-row">
+            <textarea id="input" rows="1" placeholder="Ask for something. It will use tools." autocomplete="off" spellcheck="true"></textarea>
+            <button id="btn-send" class="send-btn" type="button" aria-label="Send">➤</button>
+            <button id="btn-stop" class="send-btn stop" type="button" aria-label="Stop" hidden>■</button>
+        </div>
+    </footer>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SIDE PANEL — settings, history, memory, tasks
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="scrim" class="scrim" hidden></div>
+<aside id="panel" class="panel" hidden aria-label="Panel">
+    <header class="panel-head">
+        <nav class="tabs">
+            <button class="tab is-active" data-tab="settings" type="button">Settings</button>
+            <button class="tab" data-tab="history" type="button">History</button>
+            <button class="tab" data-tab="memory" type="button">Memory</button>
+            <button class="tab" data-tab="tasks" type="button">Tasks</button>
+        </nav>
+        <button id="panel-close" class="icon-btn" type="button" aria-label="Close">✕</button>
+    </header>
+
+    <section class="panel-body" id="tab-settings">
+        <label class="field">
+            <span class="label">Model backend URL</span>
+            <input id="set-url" type="url" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false">
+            <small>LM Studio uses :1234, llama.cpp :8080, Ollama :11434.</small>
+        </label>
+
+        <label class="field">
+            <span class="label">Model</span>
+            <select id="set-model"><option value="">auto — first loaded model</option></select>
+            <small id="set-model-note">Qwen3 8B is the recommended default for this agent.</small>
+        </label>
+
+        <label class="field">
+            <span class="label">Reasoning effort</span>
+            <select id="set-effort">
+                <option value="none">None — fastest, no thinking, 3 tool rounds</option>
+                <option value="low">Low — brief thinking, 6 tool rounds</option>
+                <option value="medium">Medium — balanced (recommended)</option>
+                <option value="max">Max — deep reasoning, most tool rounds</option>
+            </select>
+        </label>
+
+        <label class="field">
+            <span class="label">Context window override</span>
+            <input id="set-context" type="number" min="0" step="1024" placeholder="0 = detect automatically">
+            <small>Only set this if auto-detection reports the wrong size.</small>
+        </label>
+
+        <div class="field">
+            <span class="label">Behaviour</span>
+            <label class="check"><input id="set-tools" type="checkbox"><span>Tool layer — let the agent act, not just talk</span></label>
+            <label class="check"><input id="set-confirm" type="checkbox"><span>Ask before file writes and shell commands</span></label>
+            <label class="check"><input id="set-compress" type="checkbox"><span>Auto-compress the conversation near the context limit</span></label>
+            <label class="check"><input id="set-sfx" type="checkbox"><span>Sound effects</span></label>
+        </div>
+
+        <div class="field">
+            <span class="label">This install</span>
+            <dl class="kv" id="set-info"></dl>
+        </div>
+
+        <div class="field row-btns">
+            <button id="btn-rerun-setup" class="btn btn-ghost" type="button">Run setup guide again</button>
+            <button id="btn-clear-chat" class="btn btn-ghost danger" type="button">Clear conversation</button>
+        </div>
+    </section>
+
+    <section class="panel-body" id="tab-history" hidden>
+        <div class="list" id="history-list"></div>
+    </section>
+
+    <section class="panel-body" id="tab-memory" hidden>
+        <div class="field row-btns">
+            <input id="mem-key" type="text" placeholder="key" spellcheck="false">
+            <input id="mem-value" type="text" placeholder="value">
+            <button id="mem-add" class="btn btn-primary" type="button">Add</button>
+        </div>
+        <div class="list" id="memory-list"></div>
+    </section>
+
+    <section class="panel-body" id="tab-tasks" hidden>
+        <p class="hint">Scheduled work the agent runs on its own — ask it in chat to
+           "every weekday at 9:00, summarise my inbox folder", and it lands here.</p>
+        <div class="list" id="tasks-list"></div>
+    </section>
+</aside>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- Tool schemas: registry first, then one file per category. -->
+<script src="js/llm-tools/registry.js"></script>
+<script src="js/llm-tools/tool-index.js"></script>
+<script src="js/llm-tools/web-tools.js"></script>
+<script src="js/llm-tools/file-tools.js"></script>
+<script src="js/llm-tools/system-tools.js"></script>
+<script src="js/llm-tools/code-tools.js"></script>
+<script src="js/llm-tools/browser-tools.js"></script>
+<script src="js/llm-tools/task-tools.js"></script>
+<script src="js/llm-tools/memory-tools.js"></script>
+<script src="js/llm-tools/agent-tools.js"></script>
+<script src="js/llm-tools/extended-tools.js"></script>
+
+<!-- Engine -->
+<script src="js/file-fences.js"></script>
+<script src="js/chat-stream.js"></script>
+<script src="js/llm.js"></script>
+
+<!-- UI -->
+<script src="js/audio.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/setup.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

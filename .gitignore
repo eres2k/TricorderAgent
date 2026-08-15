@@ -1,0 +1,20 @@
+# Local configuration — never commit your own .env
+.env
+.env.local
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Python bytecode (some optional tools shell out to Python)
+__pycache__/
+*.pyc
+
+# Runtime state lives in ~/.tricorder-agent, not here — but ignore these in
+# case someone points TRICORDER_WORKSPACE at the repo.
+/workspace/
+*.log
