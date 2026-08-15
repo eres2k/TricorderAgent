@@ -238,6 +238,12 @@ real server against a stub model backend and drives a full tool call through
 it, so the seam between the browser loop and the executor is covered, not just
 each half.
 
+`node --test` is invoked with no path on purpose: it recurses from the working
+directory using Node's own test-file convention, which behaves the same on
+every version this project supports. A `"tests/**/*.test.js"` glob does not —
+the runner only expands globs from Node 22 on, and silently finds nothing on
+Node 20.
+
 `npm test` covers the app. `npm run doctor` covers the other half of the
 system — the model, the flags it was launched with, and whether the two
 together can call a tool, reason at depth, and see an image. Exits non-zero
