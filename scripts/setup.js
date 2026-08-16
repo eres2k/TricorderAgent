@@ -37,9 +37,14 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const net = require('net');
 const http = require('http');
 const https = require('https');
-const readline = require('readline');
+// readline/promises, not readline. The classic interface's question() is
+// callback-based and returns undefined, so `await rl.question(...)` yields
+// undefined and the .trim() below throws. That made every interactive prompt
+// in this script fail; only --yes / --check / --json ever worked. Node 17+.
+const readline = require('readline/promises');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
@@ -381,13 +386,32 @@ function shortError(res) {
 
 /* ── Prompting ────────────────────────────────────────────────────────────── */
 
-async function ask(question, fallback, { yes }) {
+async function ask(question, fallback, { yes, input = process.stdin, output = process.stdout }) {
     if (yes) return fallback;
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const rl = readline.createInterface({ input, output });
     try {
-        const answer = (await rl.question(`  ${question} ${c.dim(`[${fallback}]`)} `)).trim();
+        // Two ways this ends. Normally the operator types a line. But if stdin
+        // closes first — a piped or redirected run, a terminal going away —
+        // question() never settles at all, and awaiting it alone would hang the
+        // install forever. Race it against close and take the default.
+        const answered = rl.question(`  ${question} ${c.dim(`[${fallback}]`)} `);
+        const closed = new Promise((resolve) => rl.once('close', () => resolve(null)));
+        const answer = ((await Promise.race([answered, closed])) ?? '').trim();
         return answer || fallback;
     } finally { rl.close(); }
+}
+
+// Is something already listening here? Binding is the only answer that is
+// actually true — a connect probe cannot tell "nothing there" from "something
+// there that refuses us".
+function portInUse(port, host = '0.0.0.0') {
+    return new Promise((resolve) => {
+        if (!Number.isInteger(port) || port <= 0 || port >= 65536) { resolve(false); return; }
+        const probe = net.createServer();
+        probe.once('error', (err) => resolve(err.code === 'EADDRINUSE'));
+        probe.once('listening', () => probe.close(() => resolve(false)));
+        probe.listen(port, host);
+    });
 }
 
 async function confirm(question, fallback, opts) {
@@ -625,6 +649,25 @@ async function run(argv) {
     // the backend lists first, which is a coin flip the moment an embedding
     // model is loaded alongside the chat model.
     const patch = profiles.envDefaults(profile, { backendUrl: chosen.url, modelId: model });
+
+    // Which port to serve on. Only worth asking when the default is actually
+    // taken — otherwise it is a question with one sensible answer, and those
+    // belong in a config file rather than in front of someone installing.
+    const portNow = envNow.get('PORT') || '';
+    const defaultPort = portNow || '3000';
+    if (!opts.check) {
+        const taken = await portInUse(parseInt(defaultPort, 10));
+        if (taken) {
+            report.warn('config', `Port ${defaultPort} is already in use on this machine.`);
+            const picked = await ask('Which port should the server use?', String(parseInt(defaultPort, 10) + 1), opts);
+            const n = parseInt(picked, 10);
+            if (Number.isInteger(n) && n > 0 && n < 65536) patch.PORT = String(n);
+            else report.warn('config', `"${picked}" is not a port number — leaving it unset.`);
+        } else if (portNow) {
+            report.ok('config', `Port ${portNow} is free`);
+        }
+    }
+
     const changes = envDiff(envNow, patch);
 
     if (!Object.keys(changes).length) {
@@ -746,5 +789,5 @@ if (require.main === module) {
 module.exports = {
     parseArgs, parseEnvFile, upsertEnv, envDiff, memoryBudgetGiB,
     probeToolCalling, probeReasoningEffort, probeVision, probeEmbeddings, probeContextLength,
-    createReport, run, PROBE_TOOL,
+    createReport, run, PROBE_TOOL, ask, confirm,
 };

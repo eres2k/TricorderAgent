@@ -131,7 +131,21 @@ const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 32, maxFreeSoc
    change anything — the loader above reads it before this block.
    ============================================================================ */
 
-const PORT = parseInt(process.env.PORT, 10) || 3000;
+// `let`, because a port that is already taken is not a reason to refuse to
+// start. When the operator did not pick this port themselves, the listener
+// below walks upward to the first free one and this is rewritten to match —
+// which matters, because the server calls itself on this port (tool execution,
+// the model proxy) and those calls have to reach the port actually bound.
+let PORT = parseInt(process.env.PORT, 10) || 3000;
+
+// Did the operator choose this port, or is it just the default? An explicit
+// choice is honoured exactly: if it is taken, that is an error worth stopping
+// for, not something to silently work around.
+const PORT_EXPLICIT = Boolean(process.env.PORT);
+
+// How far to walk when the default is busy. Ten is enough to get past a few
+// stale instances without hunting halfway across the ephemeral range.
+const PORT_SEARCH_LIMIT = 10;
 
 // Path the browser reaches the model backend through. Everything under it is
 // proxied verbatim, so /llm/v1/chat/completions is the backend's own endpoint.
@@ -8055,11 +8069,35 @@ server.listen(PORT, '0.0.0.0', () => {
     }
 });
 
+// How many ports we have tried past the one we started on.
+let portsTried = 0;
+
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-        console.error(`\n  Port ${PORT} is already in use.`);
-        console.error(`  Either stop what is using it, or start on another port:  PORT=3001 node server.js\n`);
-        process.exit(1);
+        // The operator named this port, so honour it: moving somewhere else
+        // would break whatever they pointed at it — a tunnel, a reverse proxy,
+        // a bookmark.
+        if (PORT_EXPLICIT) {
+            console.error(`\n  Port ${PORT} is already in use, and PORT is set explicitly.`);
+            console.error(`  Either stop what is using it, or pick another:  PORT=${PORT + 1} npm start\n`);
+            process.exit(1);
+        }
+
+        if (portsTried >= PORT_SEARCH_LIMIT) {
+            console.error(`\n  Ports ${PORT - portsTried} through ${PORT} are all in use.`);
+            console.error(`  Stop whatever is holding them, or choose one yourself:  PORT=8080 npm start\n`);
+            process.exit(1);
+        }
+
+        // Nobody chose 3000 — it is just the default. A busy default is not
+        // worth a failed start, so step up and say so plainly. The banner
+        // prints the port we actually got, so nobody is left guessing.
+        portsTried++;
+        const busy = PORT;
+        PORT = PORT + 1;
+        console.log(`  Port ${busy} is in use — trying ${PORT}.`);
+        setImmediate(() => server.listen(PORT, '0.0.0.0'));
+        return;
     }
     log('ERROR', 'SERVER', `Server error: ${err.message}`);
     process.exit(1);

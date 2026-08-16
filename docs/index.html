@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tricorder Agent — a local-first AI agent with real tools</title>
+<meta name="description" content="A local-first AI agent with real tools — files, shell, web, code, browser — running entirely on your own machine. Zero dependencies, ~100 tok/s on an RTX 5090.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Tricorder Agent">
+<meta property="og:description" content="A local-first AI agent with real tools, running entirely on your own machine. Zero dependencies.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="screenshot.png">
+<link rel="icon" href="../icons/icon-192.svg" type="image/svg+xml">
+</head>
+<body>
+<style>
+/* ===========================================================================
+   Tricorder Agent — field card
+   Type-led, dual-theme. Every colour is a token defined on bare :root (light),
+   redefined for prefers-color-scheme dark and again for the explicit stamp, so
+   all three viewer states resolve as a complete set.
+   =========================================================================== */
+
+:root {
+  --bg:        #fbfbfd;
+  --surface:   #ffffff;
+  --panel:     #f3f4f7;
+  --line:      #e5e7ee;
+  --line-hi:   #cfd4e0;
+
+  --ink:       #12151c;
+  --ink-mid:   #454c5c;
+  --ink-dim:   #646b7c;
+
+  --accent:    #b45309;   /* the agent, and anything that is ours */
+  --accent-lo: rgba(180, 83, 9, .07);
+  --good:      #0f766e;   /* capability present */
+  --cost:      #be3a2b;   /* metered, limited */
+
+  --shadow:    0 1px 2px rgba(18,21,28,.05), 0 8px 24px -12px rgba(18,21,28,.14);
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #0a0d14;
+    --surface:   #11151f;
+    --panel:     #161b27;
+    --line:      #222836;
+    --line-hi:   #333b4d;
+
+    --ink:       #eef0f4;
+    --ink-mid:   #a8b0c0;
+    --ink-dim:   #7d8494;
+
+    --accent:    #ffa62b;
+    --accent-lo: rgba(255,166,43,.09);
+    --good:      #2dd4bf;
+    --cost:      #fb7185;
+
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 28px -12px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:        #0a0d14;
+  --surface:   #11151f;
+  --panel:     #161b27;
+  --line:      #222836;
+  --line-hi:   #333b4d;
+
+  --ink:       #eef0f4;
+  --ink-mid:   #a8b0c0;
+  --ink-dim:   #7d8494;
+
+  --accent:    #ffa62b;
+  --accent-lo: rgba(255,166,43,.09);
+  --good:      #2dd4bf;
+  --cost:      #fb7185;
+
+  --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 28px -12px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1060px; margin: 0 auto; padding: 64px 24px 88px; }
+
+/* ── Type system ──────────────────────────────────────────────────────── */
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-lo);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 999px; padding: 6px 14px;
+  margin-bottom: 26px;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+h1 {
+  font-size: clamp(38px, 7vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -2.6px;
+  font-weight: 760;
+  margin: 0 0 22px;
+  max-width: 15ch;
+  text-wrap: balance;
+}
+h1 span { color: var(--accent); }
+
+.standfirst {
+  font-size: clamp(17px, 2.2vw, 20px);
+  line-height: 1.55;
+  color: var(--ink-mid);
+  max-width: 60ch;
+  margin: 0;
+}
+.standfirst b { color: var(--ink); font-weight: 640; }
+
+section { margin-top: 76px; }
+
+.sec-head { margin-bottom: 28px; }
+h2 {
+  font-size: clamp(24px, 3.4vw, 33px);
+  letter-spacing: -1px; font-weight: 700; margin: 0 0 8px;
+  text-wrap: balance;
+}
+.sec-head p { margin: 0; color: var(--ink-dim); font-size: 15.5px; max-width: 62ch; }
+
+/* ── Stat cards ───────────────────────────────────────────────────────── */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px 20px;
+  box-shadow: var(--shadow);
+}
+.card .v {
+  display: block;
+  font-size: clamp(32px, 4.6vw, 46px);
+  font-weight: 740; letter-spacing: -2px; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.card .v small { font-size: .38em; font-weight: 600; letter-spacing: -.2px; color: var(--ink-dim); margin-left: 4px; }
+.card .k {
+  display: block; margin-top: 14px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--ink-dim);
+}
+.card .d { margin: 8px 0 0; font-size: 13.5px; color: var(--ink-mid); line-height: 1.5; }
+.card.alt .v { color: var(--good); }
+
+/* ── Comparison ───────────────────────────────────────────────────────── */
+.tbl-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14.5px; }
+th, td { text-align: left; padding: 14px 18px; vertical-align: middle; }
+
+thead th {
+  font-size: 13px; font-weight: 680; color: var(--ink);
+  border-bottom: 1px solid var(--line-hi);
+  padding-top: 20px; padding-bottom: 14px;
+  vertical-align: bottom;
+}
+thead th span { display: block; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim); margin-top: 4px; }
+thead th.ours { color: var(--accent); }
+
+tbody th {
+  font-weight: 500; color: var(--ink); width: 30%;
+  border-bottom: 1px solid var(--line);
+}
+tbody td { color: var(--ink-mid); border-bottom: 1px solid var(--line); font-size: 14px; }
+tbody td.ours { background: var(--accent-lo); color: var(--ink); }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: none; }
+
+.chip { display: inline-flex; align-items: baseline; gap: 8px; }
+.chip i {
+  font-style: normal; flex: 0 0 auto; font-size: 13px; line-height: 1;
+  transform: translateY(-1px);
+}
+.chip.yes i  { color: var(--good); }
+.chip.no i   { color: var(--ink-dim); }
+.chip.part i { color: var(--accent); }
+.chip.cost i { color: var(--cost); }
+.chip.no     { color: var(--ink-dim); }
+
+/* ── Tool bars ────────────────────────────────────────────────────────── */
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 104px 1fr 32px; align-items: center; gap: 16px; }
+.bar-row .lbl { font-size: 13px; color: var(--ink-mid); text-align: right; }
+.track { height: 16px; background: var(--panel); border-radius: 8px; overflow: hidden; }
+.fill {
+  height: 100%; background: var(--accent);
+  border-radius: 8px;
+  transform-origin: left center;
+  animation: grow .8s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.bar-row .n { font-family: var(--mono); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bars-note { margin: 22px 0 0; font-size: 14px; color: var(--ink-dim); }
+.bars-note b { color: var(--ink); font-weight: 620; }
+
+/* ── Install ──────────────────────────────────────────────────────────── */
+.install { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.install .card { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.install .head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 15px 20px; border-bottom: 1px solid var(--line);
+}
+.install .head b { font-size: 15px; font-weight: 680; letter-spacing: -.2px; }
+.install .head span {
+  font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--ink-dim); white-space: nowrap;
+}
+.install pre {
+  margin: 0; padding: 18px 20px; flex: 1 1 auto;
+  background: var(--panel);
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+  color: var(--ink); overflow-x: auto;
+}
+.install pre .c { color: var(--ink-dim); }
+.install pre .p { color: var(--accent); }
+.install .foot { padding: 14px 20px; font-size: 13px; color: var(--ink-mid); border-top: 1px solid var(--line); }
+.install .foot b { color: var(--ink); font-weight: 620; }
+
+/* Numbered because the setup pipeline genuinely is a sequence — each stage
+   depends on what the one before it found. */
+.install .steps { margin: 0; padding: 18px 20px 20px 20px; list-style: none; counter-reset: s; flex: 1 1 auto; }
+.install .steps li {
+  position: relative; counter-increment: s;
+  padding-left: 32px; margin-bottom: 13px;
+  font-size: 13.5px; color: var(--ink-mid); line-height: 1.55;
+}
+.install .steps li:last-child { margin-bottom: 0; }
+.install .steps li::before {
+  content: counter(s);
+  position: absolute; left: 0; top: 1px;
+  width: 21px; height: 21px; border-radius: 6px;
+  display: grid; place-items: center;
+  background: var(--accent-lo); color: var(--accent);
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+}
+.install .steps b { color: var(--ink); font-weight: 640; }
+
+/* ── Screenshot ───────────────────────────────────────────────────────── */
+figure.shot { margin: 0; }
+figure.shot .frame {
+  border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  box-shadow: var(--shadow); background: var(--surface); line-height: 0;
+}
+figure.shot img { width: 100%; height: auto; display: block; }
+figure.shot figcaption { margin-top: 14px; font-size: 13.5px; color: var(--ink-dim); max-width: 72ch; line-height: 1.6; }
+figure.shot figcaption b { color: var(--ink-mid); font-weight: 620; }
+
+/* ── Notes ────────────────────────────────────────────────────────────── */
+.notes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.notes .card dt { font-size: 13.5px; font-weight: 680; color: var(--ink); margin-bottom: 7px; }
+.notes .card dd { margin: 0; font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+
+footer {
+  margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 8px 16px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--ink-dim);
+}
+footer a { color: var(--ink-dim); }
+
+
+/* ── Landing-page CTA (Pages only) ────────────────────────────────────── */
+.cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.cta a {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 20px; border-radius: 10px;
+  font-size: 14.5px; font-weight: 620; text-decoration: none;
+  border: 1px solid var(--line-hi); color: var(--ink);
+  transition: border-color .15s, background .15s;
+}
+.cta a:hover { border-color: var(--accent); }
+.cta a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] .cta a.primary,
+:root:not([data-theme="light"]) .cta a.primary { color: #1a1204; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .cta a.primary { color: #fff; } }
+.cta a.primary:hover { opacity: .9; }
+
+@media (max-width: 820px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .install { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .wrap { padding: 44px 18px 64px; }
+  .notes { grid-template-columns: 1fr; }
+  .bar-row { grid-template-columns: 84px 1fr 28px; gap: 12px; }
+  section { margin-top: 56px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; }
+}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow"><span class="dot"></span>Field card · August 2026</span>
+    <h1>A real agent that never leaves <span>your machine</span>.</h1>
+    <p class="standfirst">
+      Not a chat window with a local model behind it. Tricorder Agent reads and writes files, runs
+      shell commands, drives a headless browser, executes code in a sandbox, plans its own work and
+      spawns sub-agents — at <b>~100 tokens/sec</b>, with <b>zero</b> dependencies and nothing
+      phoning home.
+    </p>
+    <div class="cta">
+      <a class="primary" href="https://github.com/eres2k/TricorderAgent">Get it on GitHub</a>
+      <a href="https://github.com/eres2k/TricorderAgent#readme">Read the docs</a>
+    </div>
+  </header>
+
+  <!-- ── Numbers ──────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>The numbers</h2>
+      <p>Measured on the reference build: Qwen3.8-27B at Q4_K_M on an RTX 5090.</p>
+    </div>
+    <div class="stats">
+      <div class="card">
+        <span class="v">~100<small>tok/s</small></span>
+        <span class="k">Throughput</span>
+        <p class="d">Roughly ten times faster than you read. Hardware-bound — see the notes.</p>
+      </div>
+      <div class="card alt">
+        <span class="v">40</span>
+        <span class="k">Tools</span>
+        <p class="d">Files, web, shell, code, browser, memory, tasks, sub-agents.</p>
+      </div>
+      <div class="card">
+        <span class="v">256<small>K</small></span>
+        <span class="k">Context</span>
+        <p class="d">Native window. Long enough for a fifteen-round tool chain over real files.</p>
+      </div>
+      <div class="card alt">
+        <span class="v">0</span>
+        <span class="k">Dependencies</span>
+        <p class="d">Node's standard library and vanilla browser JS. No install step, no build.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Install ──────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>Installed in one command</h2>
+      <p>
+        No <code>npm install</code>, no build step, no dependency tree to keep working. The runtime
+        is Node's standard library and vanilla browser JS — clone it and start it.
+      </p>
+    </div>
+    <div class="install">
+      <div class="card">
+        <div class="head"><b>The whole install</b><span>Node 20+</span></div>
+<pre><span class="c"># that's it — setup runs itself</span>
+git clone <span class="p">…</span>/TricorderAgent
+cd TricorderAgent
+npm start</pre>
+        <p class="foot">
+          Every run after the first goes straight to the server. <code>npm run setup</code> redoes
+          the detection whenever you want it.
+        </p>
+      </div>
+      <div class="card">
+        <div class="head"><b>What the first run does for you</b><span>~2 min</span></div>
+        <ol class="steps">
+          <li><b>Checks the host</b> — Node version, memory budget, and which optional extras (Docker, Chromium, Python) you already have.</li>
+          <li><b>Sizes the model</b> — works out which quant and context window actually fit your memory, and prints the command to serve it.</li>
+          <li><b>Finds the backend</b> — probes LM Studio, llama.cpp and Ollama, then ranks what's loaded.</li>
+          <li><b>Proves it works</b> — sends a <b>real request</b> to confirm the model can call a tool, reason at depth, and see an image.</li>
+          <li><b>Writes the config</b> — merges into <code>.env</code> rather than overwriting, then creates the workspace and boots.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Results ──────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>What a turn looks like</h2>
+      <p>Not a mockup — the actual app, mid-task.</p>
+    </div>
+    <figure class="shot">
+      <div class="frame"><img src="screenshot.png" alt="Tricorder Agent mid-task: the operator asks it to find every TODO and write the list to a file. Three tool calls are shown with timings — grep and read_file completed, write_file running — and an approval card asks permission before the file is written. The composer reports 103 tokens per second." loading="lazy"></div>
+      <figcaption>
+        Every tool call is shown as it happens, <b>with its arguments and how long it took</b>. The
+        file write stops for approval before anything touches disk — that gate is on by default.
+        Throughput, tokens and elapsed time read out live in the composer: <b>103 t/s</b> on this
+        turn.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ── Comparison ───────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>Against the alternatives</h2>
+      <p>
+        Two things usually trade off: a cloud assistant gets real tools but your data leaves the
+        building; a local chat UI keeps the data but can only talk. This build refuses the trade.
+      </p>
+    </div>
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Capability</th>
+            <th scope="col" class="ours">Tricorder Agent<span>This project</span></th>
+            <th scope="col">Cloud agent assistants<span>Category</span></th>
+            <th scope="col">Local chat UIs<span>Category</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Data stays on your machine</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Always</span></td><td><span class="chip no"><i>&#9675;</i>Sent to vendor</span></td><td><span class="chip yes"><i>&#9679;</i>Always</span></td></tr>
+          <tr><th scope="row">Works with the network off</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Yes</span></td><td><span class="chip no"><i>&#9675;</i>No</span></td><td><span class="chip yes"><i>&#9679;</i>Yes</span></td></tr>
+          <tr><th scope="row">Reads &amp; writes real files</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Sandboxed</span></td><td><span class="chip yes"><i>&#9679;</i>Yes</span></td><td><span class="chip no"><i>&#9675;</i>Rarely</span></td></tr>
+          <tr><th scope="row">Shell with streaming output</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Yes</span></td><td><span class="chip part"><i>&#9680;</i>Varies</span></td><td><span class="chip no"><i>&#9675;</i>No</span></td></tr>
+          <tr><th scope="row">Task planning &amp; to-do state</th><td class="ours"><span class="chip yes"><i>&#9679;</i>8 tools</span></td><td><span class="chip yes"><i>&#9679;</i>Yes</span></td><td><span class="chip no"><i>&#9675;</i>No</span></td></tr>
+          <tr><th scope="row">Background sub-agents</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Spawn &amp; collect</span></td><td><span class="chip part"><i>&#9680;</i>Varies</span></td><td><span class="chip no"><i>&#9675;</i>No</span></td></tr>
+          <tr><th scope="row">Headless browser &amp; vision</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Both</span></td><td><span class="chip part"><i>&#9680;</i>Varies</span></td><td><span class="chip no"><i>&#9675;</i>No</span></td></tr>
+          <tr><th scope="row">Persistent memory across chats</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Ranked, on disk</span></td><td><span class="chip part"><i>&#9680;</i>Vendor-held</span></td><td><span class="chip no"><i>&#9675;</i>Rarely</span></td></tr>
+          <tr><th scope="row">Approval before writes &amp; commands</th><td class="ours"><span class="chip yes"><i>&#9679;</i>On by default</span></td><td><span class="chip part"><i>&#9680;</i>Varies</span></td><td><span class="chip no"><i>&#9675;</i>N/A</span></td></tr>
+          <tr><th scope="row">Install footprint</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Node 20+, nothing else</span></td><td><span class="chip no"><i>&#9675;</i>Account</span></td><td><span class="chip part"><i>&#9680;</i>Varies</span></td></tr>
+          <tr><th scope="row">Cost per token &amp; rate limits</th><td class="ours"><span class="chip yes"><i>&#9679;</i>Neither</span></td><td><span class="chip cost"><i>&#9650;</i>Both</span></td><td><span class="chip yes"><i>&#9679;</i>Neither</span></td></tr>
+          <tr><th scope="row">Source you can audit</th><td class="ours"><span class="chip yes"><i>&#9679;</i>MIT, no deps</span></td><td><span class="chip no"><i>&#9675;</i>Closed</span></td><td><span class="chip part"><i>&#9680;</i>Varies</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Tools ────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>What it can actually do</h2>
+      <p>40 tools the model can call, by category.</p>
+    </div>
+    <div class="bars">
+      <div class="bar-row"><span class="lbl">Files</span><div class="track"><div class="fill" style="width:100%;animation-delay:.00s"></div></div><span class="n">10</span></div>
+      <div class="bar-row"><span class="lbl">Tasks</span><div class="track"><div class="fill" style="width:80%;animation-delay:.06s"></div></div><span class="n">8</span></div>
+      <div class="bar-row"><span class="lbl">Sub-agents</span><div class="track"><div class="fill" style="width:60%;animation-delay:.12s"></div></div><span class="n">6</span></div>
+      <div class="bar-row"><span class="lbl">Web</span><div class="track"><div class="fill" style="width:50%;animation-delay:.18s"></div></div><span class="n">5</span></div>
+      <div class="bar-row"><span class="lbl">Browser</span><div class="track"><div class="fill" style="width:40%;animation-delay:.24s"></div></div><span class="n">4</span></div>
+      <div class="bar-row"><span class="lbl">System</span><div class="track"><div class="fill" style="width:40%;animation-delay:.30s"></div></div><span class="n">4</span></div>
+      <div class="bar-row"><span class="lbl">Memory</span><div class="track"><div class="fill" style="width:20%;animation-delay:.36s"></div></div><span class="n">2</span></div>
+      <div class="bar-row"><span class="lbl">Code exec</span><div class="track"><div class="fill" style="width:10%;animation-delay:.42s"></div></div><span class="n">1</span></div>
+    </div>
+    <p class="bars-note">
+      Plus <b>7</b> server-side modules — git, SQLite, archives, RSS, linting, dev server, process
+      control — and up to <b>15</b> tool rounds per turn at the deepest effort tier.
+    </p>
+  </section>
+
+  <!-- ── Notes ────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <h2>The fine print</h2>
+      <p>What the numbers do and don't claim.</p>
+    </div>
+    <dl class="notes">
+      <div class="card">
+        <dt>On the throughput figure</dt>
+        <dd>~100 tok/s is Qwen3.8-27B at Q4_K_M on an RTX 5090 with the MTP draft model enabled.
+            It is hardware-bound: a smaller GPU is slower, CPU inference much slower. Your machine
+            is the variable, not the software.</dd>
+      </div>
+      <div class="card">
+        <dt>On the comparison</dt>
+        <dd>Columns are categories, not named products, because capabilities inside each category
+            vary and move quickly. "Varies" means exactly that — check the specific tool you are
+            weighing this against.</dd>
+      </div>
+      <div class="card">
+        <dt>On "nothing leaves your machine"</dt>
+        <dd>No telemetry, no analytics, no update pings — verified by audit of the source. Outbound
+            requests happen only when a tool you invoked makes one: a web search, a page fetch, a
+            model download.</dd>
+      </div>
+      <div class="card">
+        <dt>On the sharp edges</dt>
+        <dd>This is an agent with a shell on your machine. Files are sandboxed to a workspace,
+            credential files are refused, and there is no login until you set one. Set a password
+            before exposing it beyond localhost.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <footer>
+    <span>MIT licensed</span><span>·</span>
+    <span>204 tests</span><span>·</span>
+    <span>Node 20+</span><span>·</span>
+    <span>One command to install</span><span>·</span>
+    <span>LM Studio · llama.cpp · Ollama</span><span>·</span>
+    <span><a href="https://github.com/eres2k/TricorderAgent">github.com/eres2k/TricorderAgent</a></span>
+  </footer>
+
+</div>
+
+</body>
+</html>

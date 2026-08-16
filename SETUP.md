@@ -376,7 +376,10 @@ or let auto-compression handle a long conversation — it's on by default and
 the CTX pill shows how full the window is.
 
 **Port 3000 already in use**
-`PORT=3001 node server.js`.
+Nothing to do — the server steps past a busy default on its own and prints the
+port it actually bound in the startup banner. To pin one yourself, set `PORT`
+in `.env` (or `PORT=8080 npm start`); a pinned port that is busy stops with an
+error rather than moving, since anything you aimed at it would break.
 
 **Nothing loads after an update**
 A stale service worker. Hard-reload the page (Ctrl/Cmd+Shift+R), or clear the

@@ -11,6 +11,15 @@ requests its tools explicitly make.
 **Zero npm dependencies.** The whole thing is Node's standard library and
 vanilla browser JavaScript. Clone it, run `node server.js`, open a tab.
 
+**[See the full overview →](https://eres2k.github.io/TricorderAgent/)**
+
+![Tricorder Agent mid-task: the operator asks it to find every TODO and write the list to a file. Three tool calls are shown with their arguments and timings — grep and read_file done, write_file running — and an approval card asks permission before the file is written. The composer reads out 103 tokens per second.](docs/screenshot.png)
+
+|  |  |  |  |
+|:--|:--|:--|:--|
+| **~100 tok/s** | **40** tools | **256K** context | **0** dependencies |
+| Qwen3.8-27B on an RTX 5090 | across eight categories | native window | Node stdlib only |
+
 ```bash
 git clone https://github.com/eres2k/TricorderAgent.git
 cd TricorderAgent
@@ -186,6 +195,9 @@ proxies the model so the browser never fights CORS and never sees an API key.
 │   ├── setup.js            the first-run guide
 │   └── markdown.js         reply rendering
 ├── tests/                  node:test, no test framework to install
+├── docs/                   the project page — GitHub Pages serves this
+│   ├── index.html          the overview, standalone and self-contained
+│   └── screenshot.png
 └── scripts/
     ├── start.js            the launcher — version guard, first-run setup, then serve
     ├── setup.js            the setup pipeline — `npm run setup` / `npm run doctor`
@@ -208,7 +220,7 @@ The settings you're most likely to touch. See `.env.example` for all of them.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `PORT` | `3000` | Server port |
+| `PORT` | `3000` | Server port. Set it and it is pinned — busy means an error. Leave it unset and a busy 3000 steps to 3001, 3002, … |
 | `LLM_BASE_URL` | `http://127.0.0.1:1234` | Your model server root (no `/v1`) |
 | `LLM_MODEL` | `auto` | Model id, or `auto` for whatever is loaded |
 | `SITE_PW` | — | Password for the whole site. Empty = no login |
