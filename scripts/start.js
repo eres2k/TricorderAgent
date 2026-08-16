@@ -12,8 +12,9 @@
 
      1  guard     Node 20+, checked with a message instead of a stack trace
      2  setup     on a first run only, hand over to the setup pipeline
-     3  stamp     refresh the service-worker cache version
-     4  serve     require server.js, which boots on require
+     3  browser   decide whether a tab should open when the port is known
+     4  stamp     refresh the service-worker cache version
+     5  serve     require server.js, which boots on require
 
    Everything is in-process. No subprocess, so Ctrl-C, exit codes and signals
    behave exactly as they did when `npm start` was `node server.js`.
@@ -21,6 +22,8 @@
    Escape hatches, for when you want the old behaviour:
      npm start -- --no-setup      skip step 2 this once
      TRICORDER_SKIP_SETUP=1       skip step 2 always
+     npm start -- --no-open       skip step 3 this once
+     TRICORDER_NO_BROWSER=1       skip step 3 always
      npm run dev                  none of this — straight to the server
    ============================================ */
 
@@ -103,7 +106,34 @@ async function firstRunSetup() {
     }
 }
 
-/* ── 3 & 4. Stamp, then serve ─────────────────────────────────────────────
+/* ── 3. Open a tab ────────────────────────────────────────────────────────
+   `npm start` should end with the app on screen, not with a URL to copy. But
+   a browser launch is only ever right on a machine someone is sitting at, and
+   getting that wrong is loud: a container spraying xdg-open errors, or a
+   systemd unit trying to open a tab on a headless box.
+
+   So the launcher decides whether, and server.js — which is the only place
+   that knows the final port — does it. `npm run dev` never opens anything. */
+
+function shouldOpenBrowser({
+    env = process.env,
+    argv = process.argv,
+    platform = process.platform,
+    isTTY = Boolean(process.stdout.isTTY),
+} = {}) {
+    if (argv.includes('--no-open')) return false;
+    if (env.TRICORDER_NO_BROWSER === '1') return false;
+    // Not a terminal: CI, a service manager, or logs being piped to a file.
+    // Nobody is watching a screen here.
+    if (!isTTY) return false;
+    // A remote shell: the browser would open on the wrong machine, if at all.
+    if (env.SSH_CONNECTION || env.SSH_TTY) return false;
+    // Linux with no display server is a server, whatever else it looks like.
+    if (platform === 'linux' && !env.DISPLAY && !env.WAYLAND_DISPLAY) return false;
+    return true;
+}
+
+/* ── 4 & 5. Stamp, then serve ─────────────────────────────────────────────
    Stamping rewrites CACHE_VERSION in sw.js so browsers do not serve a stale
    app shell after an update. It is cosmetic on a dev machine and best-effort
    everywhere: a read-only checkout should still be able to start. */
@@ -119,6 +149,7 @@ function stampVersion() {
 async function main() {
     if (isFirstRun()) await firstRunSetup();
     stampVersion();
+    if (shouldOpenBrowser()) process.env.TRICORDER_OPEN_BROWSER = '1';
     // server.js starts listening on require — there is no exported entry point
     // and no main-module guard, which is what makes the in-process handover
     // work.
@@ -132,4 +163,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { isFirstRun, MIN_NODE_MAJOR };
+module.exports = { isFirstRun, shouldOpenBrowser, MIN_NODE_MAJOR };

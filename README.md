@@ -28,12 +28,13 @@ npm start
 
 That's the whole install. On a fresh clone `npm start` runs setup for you — it
 finds your model server, sizes the model to the memory you actually have,
-proves the backend can call a tool, and writes `.env` — then boots the server.
-Open <http://localhost:3000>.
+proves the backend can call a tool, and writes `.env` — then boots the server
+and opens it in your browser.
 
 Every run after the first skips straight to the server. You can also run
-`npm run setup` on its own whenever you want to redo the detection, or
-`npm start -- --no-setup` to bypass it once.
+`npm run setup` on its own whenever you want to redo the detection,
+`npm start -- --no-setup` to bypass it once, or `npm start -- --no-open` to
+keep the browser shut.
 
 Nothing to install beyond Node: no `npm install`, no build step, no
 dependencies.
@@ -160,6 +161,12 @@ environment variables are therefore left alone, and a non-interactive shell
 gets `--yes` rather than a prompt nobody can answer. To opt out entirely:
 `npm start -- --no-setup`, `TRICORDER_SKIP_SETUP=1`, or `npm run dev` to go
 straight to the server.
+
+`npm start` also opens the app once the server is listening — at the port it
+actually bound, which matters when a busy 3000 has been stepped past. It stays
+shut where a browser would be pointless: a non-interactive shell, an SSH
+session, or Linux with no display server. Opt out with `--no-open` or
+`TRICORDER_NO_BROWSER=1`; `npm run dev` never opens anything.
 
 Or open the page and let the first-run guide ask the same questions. Or
 configure it by hand: copy `.env.example` to `.env` and edit — every setting
