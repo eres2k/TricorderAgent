@@ -65,3 +65,44 @@ test('the Node floor matches what package.json advertises', () => {
     const declared = parseInt(String(pkg.engines.node).replace(/[^\d]/g, ''), 10);
     assert.strictEqual(launcher.MIN_NODE_MAJOR, declared);
 });
+
+/* ── Opening a browser ────────────────────────────────────────────────────
+
+   Ending `npm start` with the app on screen is only right on a machine
+   someone is sitting at. Getting it wrong is loud and hard to ignore: a
+   container spraying xdg-open failures, or a systemd unit trying to open a
+   tab on a box with no display. So the cases where it must NOT fire are what
+   is worth pinning down. */
+
+const desktop = { env: {}, argv: [], platform: 'darwin', isTTY: true };
+
+test('a desktop terminal opens the app', () => {
+    assert.strictEqual(launcher.shouldOpenBrowser(desktop), true);
+    assert.strictEqual(launcher.shouldOpenBrowser({ ...desktop, platform: 'win32' }), true);
+    assert.strictEqual(
+        launcher.shouldOpenBrowser({ ...desktop, platform: 'linux', env: { DISPLAY: ':0' } }),
+        true,
+    );
+    assert.strictEqual(
+        launcher.shouldOpenBrowser({ ...desktop, platform: 'linux', env: { WAYLAND_DISPLAY: 'wayland-0' } }),
+        true,
+        'Wayland counts as a desktop too',
+    );
+});
+
+test('nothing opens where nobody is watching', () => {
+    const cases = [
+        ['not a terminal (CI, systemd, piped logs)', { ...desktop, isTTY: false }],
+        ['over SSH', { ...desktop, env: { SSH_CONNECTION: '10.0.0.1 22' } }],
+        ['over SSH (tty variant)', { ...desktop, env: { SSH_TTY: '/dev/pts/0' } }],
+        ['headless Linux', { ...desktop, platform: 'linux', env: {} }],
+    ];
+    for (const [why, opts] of cases) {
+        assert.strictEqual(launcher.shouldOpenBrowser(opts), false, `should not open: ${why}`);
+    }
+});
+
+test('both opt-outs work', () => {
+    assert.strictEqual(launcher.shouldOpenBrowser({ ...desktop, argv: ['--no-open'] }), false);
+    assert.strictEqual(launcher.shouldOpenBrowser({ ...desktop, env: { TRICORDER_NO_BROWSER: '1' } }), false);
+});

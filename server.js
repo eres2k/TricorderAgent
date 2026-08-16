@@ -8000,6 +8000,28 @@ function probeLlmBackend(timeoutMs = 2500) {
 // of waiting on a stream that will never resume.
 try { durableStream?.recoverInterrupted(); } catch (e) { console.error('[durable] recovery failed:', e.message); }
 
+// Open the app in the operator's default browser. Called from the listen
+// callback, because only there is the port final — a busy 3000 steps upward,
+// and launching a tab at the wrong address is worse than not launching one.
+//
+// `npm start` decides WHETHER to do this (it knows about --no-open, and about
+// the headless cases where a browser would be pointless); this only knows how.
+// Every platform gets argv, never a shell string, like every other spawn here.
+function openBrowser(url) {
+    const [cmd, args] = process.platform === 'darwin' ? ['open', [url]]
+        // The empty "" is start's title argument. Without it, a quoted URL
+        // would be taken AS the title and no browser would open.
+        : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+        : ['xdg-open', [url]];
+    try {
+        const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: true });
+        // No browser, or no desktop session: not worth a word. The server is
+        // up and the URL is on screen either way.
+        child.on('error', () => {});
+        child.unref();
+    } catch { /* same */ }
+}
+
 // One padded row of the boot banner.
 function bannerRow(label, value) {
     const text = `  ${label.padEnd(11)}${String(value).slice(0, 30)}`;
@@ -8066,6 +8088,12 @@ server.listen(PORT, '0.0.0.0', () => {
 
     if (LLM_VISION_MODEL) {
         log('INFO', 'LLM', `Vision model "${LLM_VISION_MODEL}" set — image turns route there`);
+    }
+
+    if (process.env.TRICORDER_OPEN_BROWSER === '1') {
+        const url = `http://localhost:${PORT}`;
+        log('INFO', 'SERVER', `Opening ${url} in your browser — npm start -- --no-open to skip`);
+        openBrowser(url);
     }
 });
 

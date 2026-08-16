@@ -8,10 +8,11 @@ npm start
 
 On a fresh clone that runs setup first: it finds your model server, sizes the
 model to the memory you actually have, proves the backend can call a tool, and
-writes `.env` — then starts the server. Open <http://localhost:3000>.
+writes `.env` — then starts the server and opens it in your browser.
 
 Later runs go straight to the server. `npm run setup` redoes the detection on
-demand; `npm start -- --no-setup` skips it.
+demand; `npm start -- --no-setup` skips it, and `npm start -- --no-open` leaves
+the browser alone (as does `TRICORDER_NO_BROWSER=1`, and `npm run dev`).
 
 If you'd rather do it in the browser, `npm run dev` starts the server with no
 preamble — the first-run guide asks the same questions. This document is for
