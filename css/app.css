@@ -461,6 +461,33 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--purple) 5%, transparent);
     overflow: hidden;
+    transition: border-color var(--med), box-shadow var(--med);
+}
+
+/* While the reasoning streams the panel is held open and breathes: a slow
+   purple glow, and the label shimmers like it's being read. Both stop the
+   moment generation takes over — a still panel means the thinking is done. */
+.think.streaming {
+    border-color: color-mix(in srgb, var(--purple) 45%, transparent);
+    animation: think-breathe 2.4s ease-in-out infinite;
+}
+@keyframes think-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50%      { box-shadow: 0 0 16px 0 color-mix(in srgb, var(--purple) 20%, transparent),
+                           inset 0 0 12px 0 color-mix(in srgb, var(--purple) 6%, transparent); }
+}
+.think.streaming summary,
+.think.streaming summary:hover {
+    color: transparent;
+    background: linear-gradient(100deg,
+        var(--purple) 35%, #efe6ff 50%, var(--purple) 65%) 0 0 / 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: think-shimmer 1.9s linear infinite;
+}
+@keyframes think-shimmer {
+    from { background-position: 120% 0; }
+    to   { background-position: -100% 0; }
 }
 .think summary {
     padding: 8px 12px; cursor: pointer; list-style: none;
@@ -474,8 +501,12 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .think[open] summary::before { transform: rotate(90deg); }
 .think-body {
     padding: 2px 12px 11px; font-size: 13px; color: var(--text-mid);
-    white-space: pre-wrap; max-height: 320px; overflow-y: auto;
+    white-space: pre-wrap; max-height: 220px; overflow-y: auto;
     line-height: 1.6;
+}
+.think[open] .think-body { animation: think-reveal .26s var(--ease); }
+@keyframes think-reveal {
+    from { opacity: 0; transform: translateY(-4px); }
 }
 
 /* ── AWAITING FIRST OUTPUT ────────────────────────────────────────────── */
