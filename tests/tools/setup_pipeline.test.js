@@ -318,3 +318,54 @@ test('the report\'s verdict is its worst finding', () => {
     report.fail('backend', 'nothing running');
     assert.strictEqual(report.worst(), 'fail');
 });
+
+/* ── Interactive prompts ──────────────────────────────────────────────────── */
+
+/* These exist because every prompt in this script was broken and the suite did
+   not notice: setup.js imported the classic `readline`, whose question() is
+   callback-based and returns undefined, so `await rl.question(...)` produced
+   undefined and the .trim() after it threw. Only --yes / --check / --json were
+   ever covered, and those are exactly the paths that skip prompting. A first
+   run on a real terminal died at the backend stage with "Cannot read
+   properties of undefined (reading 'trim')". */
+
+const { Readable, Writable } = require('node:stream');
+
+function fakeIo(typed) {
+    const input = Readable.from([typed]);
+    const written = [];
+    const output = new Writable({ write(chunk, _enc, cb) { written.push(String(chunk)); cb(); } });
+    return { input, output, written };
+}
+
+test('a typed answer comes back, trimmed', async () => {
+    const { input, output } = fakeIo('  http://127.0.0.1:8080  \n');
+    const answer = await setup.ask('Backend URL?', 'http://127.0.0.1:1234', { yes: false, input, output });
+    assert.strictEqual(answer, 'http://127.0.0.1:8080');
+});
+
+test('an empty line takes the default instead of throwing', async () => {
+    const { input, output } = fakeIo('\n');
+    const answer = await setup.ask('Backend URL?', 'http://127.0.0.1:1234', { yes: false, input, output });
+    assert.strictEqual(answer, 'http://127.0.0.1:1234');
+});
+
+test('EOF on a closed stdin takes the default instead of throwing', async () => {
+    // The regression itself: undefined coming back from question().
+    const { input, output } = fakeIo('');
+    const answer = await setup.ask('Backend URL?', 'auto', { yes: false, input, output });
+    assert.strictEqual(answer, 'auto');
+});
+
+test('confirm reads y/n from a real prompt', async () => {
+    const yes = fakeIo('y\n');
+    assert.strictEqual(await setup.confirm('Write it?', false, { yes: false, input: yes.input, output: yes.output }), true);
+    const no = fakeIo('n\n');
+    assert.strictEqual(await setup.confirm('Write it?', true, { yes: false, input: no.input, output: no.output }), false);
+});
+
+test('the question actually reaches the operator', async () => {
+    const { input, output, written } = fakeIo('\n');
+    await setup.ask('Which backend?', 'auto', { yes: false, input, output });
+    assert.ok(written.join('').includes('Which backend?'), 'prompt text should be written to output');
+});
