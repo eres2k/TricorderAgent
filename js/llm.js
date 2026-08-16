@@ -692,10 +692,14 @@ Style:
 
     async function checkConnection() {
         try {
+            // 5 s was too tight. A local backend mid-generation answers this
+            // when it gets around to it — llama.cpp serialises requests
+            // outright — and a health check that times out before the server
+            // is merely busy reports an outage that is not happening.
             const res = await fetch(`${getApiBase()}/v1/models`, {
                 method: 'GET',
                 headers: getExtraHeaders(),
-                signal: AbortSignal.timeout(5000)
+                signal: AbortSignal.timeout(15000)
             });
             if (!res.ok) return false;
             // Verify we got JSON back, not an HTML login page or error page
@@ -5122,10 +5126,14 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
     // Fetch the model list from LM Studio via the proxy.
     async function _fetchModelList() {
         try {
+            // 5 s was too tight. A local backend mid-generation answers this
+            // when it gets around to it — llama.cpp serialises requests
+            // outright — and a health check that times out before the server
+            // is merely busy reports an outage that is not happening.
             const res = await fetch(`${getApiBase()}/v1/models`, {
                 method: 'GET',
                 headers: getExtraHeaders(),
-                signal: AbortSignal.timeout(5000)
+                signal: AbortSignal.timeout(15000)
             });
             if (!res.ok) return [];
             const contentType = res.headers.get('content-type') || '';

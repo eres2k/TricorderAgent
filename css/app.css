@@ -338,16 +338,36 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* ── MARKDOWN ─────────────────────────────────────────────────────────── */
 .md > *:first-child { margin-top: 0; }
 .md > *:last-child  { margin-bottom: 0; }
-.md p { margin: 0 0 11px; }
+.md p { margin: 0 0 12px; text-wrap: pretty; }
+
+/* A heading's job is to break the wall, so it gets space above it and a rule
+   under the top two levels. Without that separation a long tool-assisted
+   answer reads as one undifferentiated block — which is exactly how it looked
+   before. */
 .md h1, .md h2, .md h3, .md h4 {
-    margin: 20px 0 9px; line-height: 1.32;
+    margin: 24px 0 10px; line-height: 1.3;
     color: var(--amber-bright); font-weight: 650; letter-spacing: -.2px;
+    text-wrap: balance;
 }
+.md > h1:first-child, .md > h2:first-child,
+.md > h3:first-child, .md > h4:first-child { margin-top: 0; }
+.md h1, .md h2 { padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
 .md h1 { font-size: 19.5px; } .md h2 { font-size: 17px; }
 .md h3 { font-size: 15.5px; } .md h4 { font-size: 14.5px; }
-.md ul, .md ol { margin: 0 0 11px; padding-left: 22px; }
-.md li { margin-bottom: 5px; }
-.md li::marker { color: var(--amber-dim); }
+
+.md ul, .md ol { margin: 0 0 12px; padding-left: 20px; }
+.md li { margin-bottom: 7px; padding-left: 3px; }
+.md li:last-child { margin-bottom: 0; }
+.md li > ul, .md li > ol { margin-top: 7px; }
+.md li::marker { color: var(--amber-dim); font-weight: 700; }
+/* Nested content inside a list item needs breathing room of its own or the
+   bullet and the paragraph run together. */
+.md li > p { margin-bottom: 7px; }
+
+.md strong { color: var(--amber-bright); font-weight: 620; }
+.md em { color: var(--text); }
+.md a { text-decoration: underline; text-decoration-color: rgba(130, 169, 255, .4); text-underline-offset: 2px; }
+.md a:hover { text-decoration-color: var(--blue); }
 .md blockquote {
     margin: 0 0 11px; padding: 3px 0 3px 13px;
     border-left: 2px solid var(--amber-dim); color: var(--text-mid);
@@ -390,8 +410,21 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
     transition: color var(--fast), background var(--fast);
 }
 .code-copy:hover { color: var(--amber-bright); background: var(--bg-card); }
-.code-block pre { margin: 0; padding: 12px 13px; overflow-x: auto; background: var(--bg-sunk); }
+/* A generated file can be hundreds of lines. Left unbounded it pushes the rest
+   of the reply — and the next turn — off the screen, and a streaming block
+   grows under your cursor while you are trying to read it. Cap it and let the
+   block scroll inside itself instead. */
+.code-block pre {
+    margin: 0; padding: 12px 13px;
+    overflow: auto;
+    max-height: 60vh;
+    overscroll-behavior: contain;
+    background: var(--bg-sunk);
+}
 .code-block code { background: none; padding: 0; color: var(--text); font-size: 12.5px; line-height: 1.6; }
+/* While a file is still streaming, keep the window shorter still and pinned to
+   the bottom, so what you see is the line being written. */
+.code-block.is-streaming pre { max-height: 34vh; }
 
 /* ── THINKING ─────────────────────────────────────────────────────────── */
 .think {
@@ -417,15 +450,62 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
     line-height: 1.6;
 }
 
+/* ── AWAITING FIRST OUTPUT ────────────────────────────────────────────── */
+/* The gap between pressing send and the first token is dead air, and on a
+   local 27B at depth it is seconds long. Three dots is the smallest honest
+   thing that says "still here" — it is removed the instant any real content
+   arrives: text, a tool row, or the thinking panel. */
+.await { display: flex; gap: 5px; align-items: center; padding: 4px 2px; }
+.await span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--amber);
+    animation: blink 1.25s ease-in-out infinite;
+}
+.await span:nth-child(2) { animation-delay: .18s; }
+.await span:nth-child(3) { animation-delay: .36s; }
+@keyframes blink {
+    0%, 70%, 100% { opacity: .22; transform: scale(.82); }
+    35%           { opacity: 1;   transform: scale(1); }
+}
+
 /* ── TOOLS ────────────────────────────────────────────────────────────── */
 /* Tool calls are a vertical run, so they get a shared left rail and sit
-   flush against it — a timeline, not a stack of separate cards. */
-.tools {
+   flush against it — a timeline, not a stack of separate cards.
+
+   The block is a <details>: open while the turn runs, closed once it ends.
+   A finished chain is evidence, not progress — worth keeping, not worth the
+   vertical space it takes from the answer. */
+.tools { margin-bottom: 11px; }
+
+.tools-head {
+    list-style: none; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.1px;
+    text-transform: uppercase; color: var(--text-dim);
+    transition: color var(--fast);
+}
+.tools-head::-webkit-details-marker { display: none; }
+.tools-head:hover { color: var(--amber-bright); }
+.tools-head::before {
+    content: '▸'; display: inline-block;
+    transition: transform var(--fast);
+    color: var(--amber-dim);
+}
+.tools[open] .tools-head::before { transform: rotate(90deg); }
+.tools.has-fail .tools-head { color: var(--red); }
+.tools.has-fail .tools-head::before { color: var(--red); }
+
+.tools-list {
     display: flex; flex-direction: column; gap: 4px;
-    margin-bottom: 11px;
     padding-left: 11px;
     border-left: 1px solid var(--line);
 }
+/* Only the newest rows stay on screen while the turn runs. A fifteen-round
+   chain otherwise pushes the answer off the bottom of the screen, and the
+   answer is the thing people came for. The summary line says how many are
+   hidden, and closing/reopening the block shows every one. */
+.tools[open] .tools-list > .tool:nth-last-child(n+4) { display: none; }
 
 .tool {
     display: flex; align-items: center; gap: 10px;
@@ -512,6 +592,17 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .pill.warn .pill-val { color: var(--red); }
 
 .stat { font-size: 10px; color: var(--text-dim); font-family: var(--mono); letter-spacing: .3px; }
+/* Mid-generation the throughput is the number that moves, so it gets the
+   signal colour while it is live and drops back to grey once the turn is
+   finished and the figure stops changing. */
+.stat.is-live { color: var(--amber-bright); }
+.stat.is-live::before {
+    content: '';
+    display: inline-block; width: 5px; height: 5px;
+    margin-right: 6px; border-radius: 50%;
+    background: var(--amber); vertical-align: middle;
+    animation: pulse 1.1s ease-in-out infinite;
+}
 
 .composer-row { display: flex; align-items: flex-end; gap: 9px; }
 
