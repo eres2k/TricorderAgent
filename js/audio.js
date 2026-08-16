@@ -1,37 +1,43 @@
 /* ============================================
-   Tricorder Audio Engine
-   Sci-fi sound effects using Web Audio API
+   Tricorder Audio
+   ------------------------------------------------------------------
+   Three synthesised UI sounds — sent, done, error — built from oscillators so
+   there are no audio files to ship and nothing to fetch at runtime.
+
+   This used to carry a dozen more: boot chimes, scanner sweeps, an ambient
+   hum, and voice-mode cues left over from a speech feature this build does
+   not have. None of them had a call site. What survives is what app.js
+   actually plays.
+
+   The volume ceiling is deliberately low. This is punctuation, not a score.
    ============================================ */
 
 const TricorderAudio = (() => {
     let ctx = null;
-    let enabled = true;
-    let _userInteracted = false;
+    let interacted = false;
 
-    // Browsers block AudioContext before first user gesture.
-    // Defer creation until we know the user has interacted.
+    // Browsers refuse to start an AudioContext before the first user gesture,
+    // and constructing one anyway leaves a suspended context that never
+    // recovers. Wait for the gesture, then build it lazily.
     function markInteracted() {
-        if (_userInteracted) return;
-        _userInteracted = true;
-        document.removeEventListener('click', markInteracted, true);
-        document.removeEventListener('touchstart', markInteracted, true);
-        document.removeEventListener('keydown', markInteracted, true);
+        interacted = true;
+        for (const ev of ['click', 'touchstart', 'keydown']) {
+            document.removeEventListener(ev, markInteracted, true);
+        }
     }
-    document.addEventListener('click', markInteracted, true);
-    document.addEventListener('touchstart', markInteracted, true);
-    document.addEventListener('keydown', markInteracted, true);
+    for (const ev of ['click', 'touchstart', 'keydown']) {
+        document.addEventListener(ev, markInteracted, true);
+    }
 
     function getCtx() {
-        if (!_userInteracted) return null;
-        if (!ctx) {
-            ctx = new (window.AudioContext || window.webkitAudioContext)();
-        }
+        if (!interacted) return null;
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
         if (ctx.state === 'suspended') ctx.resume();
         return ctx;
     }
 
-    function playTone(freq, duration, type = 'sine', volume = 0.1) {
-        if (!enabled) return;
+    // One note. Every sound below is one or two of these.
+    function tone(freq, duration, volume = 0.05, type = 'sine') {
         try {
             const c = getCtx();
             if (!c) return;
@@ -45,121 +51,25 @@ const TricorderAudio = (() => {
             gain.connect(c.destination);
             osc.start();
             osc.stop(c.currentTime + duration);
-        } catch (e) { /* silent fail */ }
+        } catch { /* sound is cosmetic — never let it surface as an error */ }
     }
 
     return {
-        // Classic Star Trek chirp
-        chirp() {
-            playTone(1200, 0.08, 'sine', 0.08);
-            setTimeout(() => playTone(1600, 0.12, 'sine', 0.06), 80);
-        },
-
-        // Button press
+        // Message sent.
         tap() {
-            playTone(800, 0.05, 'sine', 0.05);
+            tone(820, 0.05, 0.045);
         },
 
-        // Module switch
-        switch() {
-            playTone(600, 0.06, 'sine', 0.06);
-            setTimeout(() => playTone(900, 0.08, 'sine', 0.05), 60);
-        },
-
-        // Scan start
-        scanStart() {
-            for (let i = 0; i < 5; i++) {
-                setTimeout(() => playTone(400 + i * 200, 0.1, 'sine', 0.05), i * 80);
-            }
-        },
-
-        // Scan complete
-        scanComplete() {
-            playTone(1000, 0.1, 'sine', 0.06);
-            setTimeout(() => playTone(1200, 0.1, 'sine', 0.06), 100);
-            setTimeout(() => playTone(1500, 0.15, 'sine', 0.06), 200);
-        },
-
-        // Error / alert
-        alert() {
-            playTone(300, 0.2, 'square', 0.06);
-            setTimeout(() => playTone(300, 0.2, 'square', 0.06), 300);
-        },
-
-        // Boot sequence
-        boot() {
-            const notes = [200, 300, 400, 500, 600, 800, 1000, 1200];
-            notes.forEach((freq, i) => {
-                setTimeout(() => playTone(freq, 0.15, 'sine', 0.04), i * 120);
-            });
-        },
-
-        // Voice activation
-        voiceOn() {
-            playTone(500, 0.08, 'sine', 0.06);
-            setTimeout(() => playTone(700, 0.1, 'sine', 0.06), 80);
-        },
-
-        // Voice deactivation
-        voiceOff() {
-            playTone(700, 0.08, 'sine', 0.06);
-            setTimeout(() => playTone(500, 0.1, 'sine', 0.06), 80);
-        },
-
-        // Message received
+        // Reply finished — rising pair.
         message() {
-            playTone(880, 0.08, 'sine', 0.05);
-            setTimeout(() => playTone(1100, 0.12, 'sine', 0.04), 100);
+            tone(880, 0.08, 0.045);
+            setTimeout(() => tone(1180, 0.12, 0.035), 95);
         },
 
-        // Ambient scanner hum (continuous)
-        startHum() {
-            if (!enabled) return null;
-            try {
-                const c = getCtx();
-                if (!c) return null;
-                const osc = c.createOscillator();
-                const gain = c.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(60, c.currentTime);
-                gain.gain.setValueAtTime(0.015, c.currentTime);
-                osc.connect(gain);
-                gain.connect(c.destination);
-                osc.start();
-                return { osc, gain };
-            } catch (e) { return null; }
+        // Something failed — flat repeat, deliberately less pleasant.
+        alert() {
+            tone(320, 0.18, 0.05, 'triangle');
+            setTimeout(() => tone(320, 0.18, 0.05, 'triangle'), 260);
         },
-
-        stopHum(hum) {
-            if (hum) {
-                try {
-                    hum.gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-                    hum.osc.stop(ctx.currentTime + 0.3);
-                } catch (e) { /* silent */ }
-            }
-        },
-
-        // Haptic feedback (vibration)
-        haptic(pattern = [15]) {
-            if (navigator.vibrate) {
-                navigator.vibrate(pattern);
-            }
-        },
-
-        toggle() {
-            enabled = !enabled;
-            if (typeof TricorderLLM !== 'undefined') {
-                TricorderLLM.saveSettings({ sfx: enabled });
-            }
-            return enabled;
-        },
-
-        syncFromSettings() {
-            if (typeof TricorderLLM !== 'undefined') {
-                enabled = TricorderLLM.settings.sfx !== false;
-            }
-        },
-
-        get isEnabled() { return enabled; }
     };
 })();

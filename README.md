@@ -14,16 +14,20 @@ vanilla browser JavaScript. Clone it, run `node server.js`, open a tab.
 ```bash
 git clone https://github.com/eres2k/TricorderAgent.git
 cd TricorderAgent
-npm run setup
 npm start
 ```
 
-`npm run setup` finds your model server, sizes the model to the memory you
-actually have, proves the backend can call a tool, and writes `.env`. Then open
-<http://localhost:3000>.
+That's the whole install. On a fresh clone `npm start` runs setup for you — it
+finds your model server, sizes the model to the memory you actually have,
+proves the backend can call a tool, and writes `.env` — then boots the server.
+Open <http://localhost:3000>.
 
-Prefer the browser? `node server.js` on its own works too — a setup guide walks
-you through connecting a model the first time you open it.
+Every run after the first skips straight to the server. You can also run
+`npm run setup` on its own whenever you want to redo the detection, or
+`npm start -- --no-setup` to bypass it once.
+
+Nothing to install beyond Node: no `npm install`, no build step, no
+dependencies.
 
 ---
 
@@ -93,6 +97,9 @@ costs you.
 
 ## Setup
 
+`npm start` does this automatically the first time. Run it directly to redo the
+detection later:
+
 ```bash
 npm run setup
 ```
@@ -108,6 +115,13 @@ npm run doctor           # the same diagnosis, writing nothing
 npm run setup -- --yes   # non-interactive
 npm run setup -- --json  # machine-readable, exit 1 on a problem
 ```
+
+The launcher treats "no `.env` **and** no `LLM_BASE_URL` in the environment" as
+a first run. Containers and service managers that pass configuration as real
+environment variables are therefore left alone, and a non-interactive shell
+gets `--yes` rather than a prompt nobody can answer. To opt out entirely:
+`npm start -- --no-setup`, `TRICORDER_SKIP_SETUP=1`, or `npm run dev` to go
+straight to the server.
 
 Or open the page and let the first-run guide ask the same questions. Or
 configure it by hand: copy `.env.example` to `.env` and edit — every setting
@@ -173,6 +187,7 @@ proxies the model so the browser never fights CORS and never sees an API key.
 │   └── markdown.js         reply rendering
 ├── tests/                  node:test, no test framework to install
 └── scripts/
+    ├── start.js            the launcher — version guard, first-run setup, then serve
     ├── setup.js            the setup pipeline — `npm run setup` / `npm run doctor`
     ├── check-refs.js       the reference check
     └── gen-extended-tools.js   schema generator

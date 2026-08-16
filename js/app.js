@@ -40,6 +40,7 @@
         panel: $('panel'),
         scrim: $('scrim'),
         toast: $('toast'),
+        topbar: document.querySelector('.topbar'),
     };
 
     // The message element currently being streamed into, plus its parts.
@@ -245,6 +246,10 @@
     function setBusy(busy) {
         dom.send.hidden = busy;
         dom.stop.hidden = !busy;
+        // Drives the scanner rail under the topbar. It is the one activity cue
+        // visible from across the room, when the transcript is scrolled away
+        // or the phone is on a desk.
+        dom.topbar?.classList.toggle('busy', busy);
     }
 
     async function send(text) {

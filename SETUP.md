@@ -3,20 +3,30 @@
 The short version:
 
 ```bash
-npm run setup
+npm start
 ```
 
-It finds your model server, sizes the model to the memory you actually have,
-proves the backend can call a tool, and writes `.env`. Then `npm start` and
-open <http://localhost:3000>.
+On a fresh clone that runs setup first: it finds your model server, sizes the
+model to the memory you actually have, proves the backend can call a tool, and
+writes `.env` — then starts the server. Open <http://localhost:3000>.
 
-If you'd rather do it in the browser, just run `node server.js` — the first-run
-guide asks the same questions. This document is for when you want to know what
-either of them is doing, or you'd rather configure it by hand.
+Later runs go straight to the server. `npm run setup` redoes the detection on
+demand; `npm start -- --no-setup` skips it.
+
+If you'd rather do it in the browser, `npm run dev` starts the server with no
+preamble — the first-run guide asks the same questions. This document is for
+when you want to know what any of them is doing, or you'd rather configure it
+by hand.
 
 ---
 
 ## 0. `npm run setup`
+
+`npm start` runs this for you on a first run — "first run" meaning no `.env`
+**and** no `LLM_BASE_URL` in the environment, so a container configured through
+real environment variables is never interrupted by it. In a non-interactive
+shell it runs as `--yes` rather than waiting on a prompt. Opt out with
+`npm start -- --no-setup`, `TRICORDER_SKIP_SETUP=1`, or `npm run dev`.
 
 Seven stages, each of which prints what it found and why it matters:
 

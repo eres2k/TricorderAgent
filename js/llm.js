@@ -661,7 +661,7 @@ Full runnable code — no \`...\`, no "rest stays the same", never split a file 
 ## OUTPUT
 Concise; lead with the answer, caveats after. No greetings, filler, sycophancy. Expert depth, opinionated recommendations. Markdown where it helps (headings, lists, tables, fenced code WITH language tags, **bold** takeaways). Embed real images ![desc](url) from tool results when asked to "show" something — never invent URLs.
 
-End non-trivial replies with "## Summary" — 1-3 spoken-friendly sentences (TTS reads it aloud); very short answers are their own summary. The heading is ALWAYS exactly "## Summary" (English), even in German replies, and it is the LAST thing — stop after it. The summary text is written in the operator's language and must read naturally when spoken aloud: plain prose, no markdown, no URLs, no code, and no abbreviations or symbols — spell them out in words (German summaries: "zum Beispiel" statt "z.B.", "circa" statt "ca.", "Prozent" statt "%", "und" statt "&", Zahlen mit Komma als Dezimaltrennzeichen). Inside the Summary you may prefix passages with a hidden delivery cue of the form "[mood: <short description>]" (e.g. "[mood: ruhig und freundlich]", "[mood: dringend]") when a specific emotional delivery fits the content, and again mid-summary if the register shifts. The tags are machine instructions for the speech synthesizer — never shown to the user and never spoken, so don't reference them in prose. Use them sparingly; omit them for neutral content.`;
+End non-trivial replies with "## Summary" — 1-3 plain sentences in the operator's language: prose only, no markdown, no URLs, no code. Very short answers are their own summary. The heading is ALWAYS exactly "## Summary" (English), even in German replies, and it is the LAST thing — stop after it.`;
 
     // Free-form conversational system prompt (ChatGPT-style).
     // Used when settings.conversational is true. Drops the strict Tricorder
@@ -672,7 +672,7 @@ End non-trivial replies with "## Summary" — 1-3 spoken-friendly sentences (TTS
 Style:
 - Chat naturally. Greetings, acknowledgements, follow-up questions, and small talk are all welcome.
 - Match the operator's language (German or English) and register — casual if they're casual, technical if they're technical.
-- Responses can be as long or short as the topic deserves. Don't force brevity; don't pad either. In voice chat your reply is read aloud — lead with the answer and keep it to a few spoken sentences unless the operator asks for depth.
+- Responses can be as long or short as the topic deserves. Don't force brevity; don't pad either. Lead with the answer and keep it to a few sentences unless the operator asks for depth.
 - Use markdown (headings, lists, code blocks, tables) when it helps clarity, plain prose when it doesn't.
 - When a web search returns images and the topic is visual (a place, person, product, artwork, event), embed 1-2 of them inline with ![title](image) markdown using the exact image URL from the tool result — never invent image URLs.
 - Show personality. Be curious, warm, and engaged. Ask clarifying questions when the request is ambiguous.
@@ -966,8 +966,8 @@ Style:
 
     // Conversational sampling profile. Thinking is already off via the NONE
     // effort tier above, but chat wants livelier sampling than NONE's dry
-    // factual settings, and a tighter output budget — spoken replies should
-    // be a quick exchange, not an essay the TTS reads for minutes.
+    // factual settings, and a tighter output budget — a chat turn should be a
+    // quick exchange, not an essay.
     const CHAT_PROFILE = { reasoningEffort: 'none', temperature: 0.7, top_p: 0.9, top_k: 20, presence_penalty: 1.3, repeat_penalty: 1.05, max_tokens: 8192, showThinking: false, interleavedThinking: false };
 
     // --- Style-based sampling ------------------------------------------------
