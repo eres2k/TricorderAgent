@@ -443,6 +443,16 @@ const TricorderLLM = (() => {
     function getModelId() {
         return settings.model || '';
     }
+
+    // The id the backend is actually serving, learned from /v1/models. This is
+    // NOT the same as getModelId(): on the default "auto" setting that returns
+    // '', because the operator pinned nothing. Anything that has to reason
+    // about WHICH model is answering — chat-template quirks above all — has to
+    // use this, or it silently treats a known model as unknown.
+    let _resolvedModelId = '';
+    function getEffectiveModelId() {
+        return getModelId() || _resolvedModelId || '';
+    }
     // The backend the proxy should forward to. An empty setting means "the one
     // the server was started with" — that is the common case, and hardcoding a
     // default here would silently override a correctly configured .env.
@@ -735,7 +745,7 @@ Style:
     // <tool_call>{json}</tool_call> preamble + <tool_response> result format —
     // far more robust than its brittle native <|python_tag|> convention.
     function getModelFamily() {
-        const m = getModelId().toLowerCase();
+        const m = getEffectiveModelId().toLowerCase();
         if (!m) return 'unknown';
         if (m.includes('qwen'))   return 'qwen';
         if (m.includes('llama'))  return 'llama';
@@ -941,6 +951,25 @@ Style:
     // the whole request with a 400 "Channel Error". For these families, a
     // trailing system reminder must instead ride along as a user-role turn.
     const REQUIRES_LEADING_SYSTEM = new Set(['qwen']);
+
+    // Which families are known to TOLERATE a system message after the history.
+    // The list is deliberately an allowlist rather than a blocklist: a trailing
+    // user-role turn is accepted by every chat template in existence, while a
+    // trailing system-role one is a hard 500 on the strict templates. So an
+    // unrecognised model gets the shape that always works, and only families
+    // proven to accept the better shape opt into it.
+    //
+    // This used to be inverted, and the cost was total: on the default "auto"
+    // model setting getModelFamily() answers 'unknown', so the recommended
+    // Qwen build fell through to system-role and failed EVERY message with
+    // "Jinja Exception: System message must be at the beginning."
+    const ACCEPTS_TRAILING_SYSTEM = new Set(['llama', 'mistral', 'deepseek', 'gpt-oss', 'muse']);
+
+    // Role for the volatile blocks that ride after the history.
+    function trailingContextRole(family) {
+        if (REQUIRES_LEADING_SYSTEM.has(family)) return 'user';
+        return ACCEPTS_TRAILING_SYSTEM.has(family) ? 'system' : 'user';
+    }
 
     // Llama 3.x uses its own special-token alphabet — ChatML stops would never
     // fire. Anchoring on <|eot_id|> keeps streamed turns from running past
@@ -1380,7 +1409,7 @@ ${_memoryImprovements}`);
                 .map(t => t.function);
             if (lateSchemas.length) {
                 messages.push({
-                    role: REQUIRES_LEADING_SYSTEM.has(family) ? 'user' : 'system',
+                    role: trailingContextRole(family),
                     content: `Additional tools loaded this turn — callable via the same <tool_call> JSON format:\n<tools>${JSON.stringify(lateSchemas)}</tools>`,
                 });
             }
@@ -1402,7 +1431,7 @@ ${_memoryImprovements}`);
         }
         if (dynamicContext) {
             messages.push({
-                role: REQUIRES_LEADING_SYSTEM.has(family) ? 'user' : 'system',
+                role: trailingContextRole(family),
                 content: dynamicContext,
             });
         }
@@ -5163,6 +5192,10 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
         const activeId = getModelId();
         const active = models.find(m => m.id === activeId) || models[0];
         if (active) {
+            // Remember WHICH model is answering, so template quirks can be
+            // detected on the "auto" setting instead of falling through to
+            // "unknown" and picking the wrong request shape.
+            if (active.id) _resolvedModelId = active.id;
             _contextLength = active.context_length || active.max_model_len || active.context_window || 0;
             if (_contextLength) _contextSource = 'catalog';
         }
@@ -5607,6 +5640,8 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
             noteToolsUsed,
             activateTools,
             buildRequestBody,
+            getModelFamily,
+            trailingContextRole,
             clampMaxTokens,
             topLevelReasoningEffort,
             pickEffortFallback,
