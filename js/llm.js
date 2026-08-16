@@ -661,7 +661,7 @@ LONG-RUNNING WORK: run it with agent_spawn — Tricorder announces completion or
 
 ## CODING
 Thinking is a scratchpad — the COMPLETE code must land in the visible reply or a tool call; code only in reasoning was never delivered. ONE channel per artifact:
-1. LIVE CANVAS — demos/UI/games/visualizations: one self-contained fenced \`html\` (or \`svg\`/\`js\`) block, NO file= attribute, all CSS/JS inline, no external libs. Renders live in chat.
+1. LIVE CANVAS — demos/UI/games/visualizations: one self-contained fenced \`html\` or \`svg\` block, NO file= attribute, all CSS/JS inline, no external libs (the frame is sandboxed and offline — a CDN link will simply not load). Renders live in chat, with a source/preview toggle.
 2. FILE BLOCK — files for disk: one fenced block per file, path on the info line (\`\`\`html file=~/tricorder-workspace/code/app.html), complete content any size — streams live, auto-saves on close. Don't also write_file the same content; content must not contain a bare \`\`\` line (then use chunked write_file). Surgical edits → file_edit. Afterwards summarize in 1-3 sentences.
 3. CODE EXECUTION — verify by running (run_command/code_exec); report ACTUAL output.
 4. PLAIN fenced block + language tag for snippets to copy.
@@ -692,10 +692,14 @@ Style:
 
     async function checkConnection() {
         try {
+            // 5 s was too tight. A local backend mid-generation answers this
+            // when it gets around to it — llama.cpp serialises requests
+            // outright — and a health check that times out before the server
+            // is merely busy reports an outage that is not happening.
             const res = await fetch(`${getApiBase()}/v1/models`, {
                 method: 'GET',
                 headers: getExtraHeaders(),
-                signal: AbortSignal.timeout(5000)
+                signal: AbortSignal.timeout(15000)
             });
             if (!res.ok) return false;
             // Verify we got JSON back, not an HTML login page or error page
@@ -5122,10 +5126,14 @@ Multiple parallel calls: emit multiple <tool_call> blocks back-to-back. Tool res
     // Fetch the model list from LM Studio via the proxy.
     async function _fetchModelList() {
         try {
+            // 5 s was too tight. A local backend mid-generation answers this
+            // when it gets around to it — llama.cpp serialises requests
+            // outright — and a health check that times out before the server
+            // is merely busy reports an outage that is not happening.
             const res = await fetch(`${getApiBase()}/v1/models`, {
                 method: 'GET',
                 headers: getExtraHeaders(),
-                signal: AbortSignal.timeout(5000)
+                signal: AbortSignal.timeout(15000)
             });
             if (!res.ok) return [];
             const contentType = res.headers.get('content-type') || '';

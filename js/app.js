@@ -43,11 +43,23 @@
         topbar: document.querySelector('.topbar'),
     };
 
+    // How many tool rows stay on screen while a turn is running. Three is
+    // enough to see what is happening now without a long chain pushing the
+    // answer off the bottom of the screen; the rest are one click away.
+    const VISIBLE_TOOL_ROWS = 3;
+
     // The message element currently being streamed into, plus its parts.
     let live = null;
     // tool_call_id → the row element showing that call.
     const toolRows = new Map();
     let backendOnline = false;
+
+    // Consecutive failed health checks before the UI calls the backend gone.
+    // One is never enough: a local server busy with a long generation drops the
+    // occasional probe, and tearing down the composer over that is worse than
+    // being a minute late to notice a real outage.
+    const OFFLINE_STRIKES = 3;
+    let offlineStrikes = 0;
 
     /* ── UTILITIES ─────────────────────────────────────────────────────── */
 
@@ -119,19 +131,31 @@
             <div class="msg-role">Agent <span class="phase"></span></div>
             <div class="msg-body">
                 <details class="think" hidden><summary>Thinking</summary><div class="think-body"></div></details>
-                <div class="tools"></div>
+                <details class="tools" open hidden>
+                    <summary class="tools-head"><span class="tools-sum">Using tools</span></summary>
+                    <div class="tools-list"></div>
+                </details>
+                <div class="await"><span></span><span></span><span></span></div>
                 <div class="md"></div>
             </div>`;
         dom.transcript.appendChild(wrap);
         live = {
             wrap,
+            await: wrap.querySelector('.await'),
             phase: wrap.querySelector('.phase'),
             think: wrap.querySelector('.think'),
             thinkBody: wrap.querySelector('.think-body'),
-            tools: wrap.querySelector('.tools'),
+            toolsWrap: wrap.querySelector('.tools'),
+            tools: wrap.querySelector('.tools-list'),
+            toolsSum: wrap.querySelector('.tools-sum'),
             md: wrap.querySelector('.md'),
             text: '',
+            startedAt: Date.now(),
         };
+        // The first token of a 27B at depth can be seconds away. Until then the
+        // card is empty and the app looks hung, which is the one impression a
+        // local agent cannot afford — people conclude it broke and hit stop.
+        live.settle = () => { if (live && live.await) { live.await.remove(); live.await = null; } };
         toolRows.clear();
         scrollDown(true);
         return live;
@@ -139,6 +163,7 @@
 
     function endLive() {
         if (!live) return;
+        live.settle();
         live.phase.textContent = '';
         // An empty reply with no tool activity would render as a blank card.
         if (!live.text.trim() && !live.tools.children.length) {
@@ -146,6 +171,13 @@
         }
         // Collapse the thinking block once the answer is there.
         if (live.think && live.think.open) live.think.open = false;
+        // …and the tool log too. Once the turn is finished the calls are
+        // evidence rather than progress: worth keeping, not worth the space.
+        // A click reopens the whole list, uncapped.
+        if (live.tools.children.length) {
+            live.toolsWrap.open = false;
+            summariseTools();
+        }
         live = null;
     }
 
@@ -164,9 +196,34 @@
             <span class="tool-state">running</span>`;
         row.querySelector('.tool-name').textContent = name || 'tool';
         live.tools.appendChild(row);
+        live.toolsWrap.hidden = false;
+        live.settle();
         toolRows.set(id, row);
+        summariseTools();
         scrollDown();
         return row;
+    }
+
+    // The tool block is a running log, and a fifteen-round chain buries the
+    // answer under it. Only the newest three rows stay visible while the turn
+    // runs (CSS caps the list); this line says how many there are in total, so
+    // nothing is hidden without saying so, and it becomes the collapsed
+    // summary once the turn ends.
+    function summariseTools() {
+        if (!live) return;
+        const rows = [...live.tools.children];
+        if (!rows.length) return;
+        const done = rows.filter((r) => r.classList.contains('ok')).length;
+        const failed = rows.filter((r) => r.classList.contains('fail')).length;
+        const running = rows.length - done - failed;
+        const hidden = Math.max(0, rows.length - VISIBLE_TOOL_ROWS);
+
+        const bits = [`${rows.length} tool${rows.length > 1 ? 's' : ''}`];
+        if (running > 0) bits.push(`${running} running`);
+        if (failed > 0) bits.push(`${failed} failed`);
+        if (hidden > 0 && live.toolsWrap.open) bits.push(`${hidden} earlier hidden`);
+        live.toolsSum.textContent = bits.join(' · ');
+        live.toolsWrap.classList.toggle('has-fail', failed > 0);
     }
 
     function onToolEvent(status) {
@@ -206,6 +263,7 @@
                 state.textContent = String(status.error || 'failed').slice(0, 60);
                 break;
         }
+        summariseTools();
         scrollDown();
     }
 
@@ -284,6 +342,7 @@
     function onChunk(delta, fullText) {
         if (!live) beginLive();
         live.text = fullText || (live.text + (delta || ''));
+        if (live.text) live.settle();
         live.md.innerHTML = TricorderMarkdown.render(live.text);
         scrollDown();
     }
@@ -302,6 +361,7 @@
             case 'thinking':
                 live.phase.textContent = '· thinking';
                 if (status.content) {
+                    live.settle();
                     live.think.hidden = false;
                     live.thinkBody.textContent = status.content;
                     live.thinkBody.scrollTop = live.thinkBody.scrollHeight;
@@ -311,7 +371,18 @@
                 live.phase.textContent = '· writing';
                 break;
             case 'gen_progress':
-                if (status.tokens) live.phase.textContent = `· ${status.tokens} tokens`;
+                // Live throughput. The backend reports real timings when it
+                // can (llama.cpp and LM Studio both do), and that number is
+                // the one worth showing — it is what the server would print.
+                // Without it, fall back to tokens over wall-clock, which is
+                // close enough to watch a generation speed up or stall.
+                renderStats({
+                    tokens: status.tokens,
+                    tokensPerSecond: status.tokPerSec
+                        || (status.tokens && live.startedAt
+                            ? status.tokens / Math.max(0.5, (Date.now() - live.startedAt) / 1000)
+                            : 0),
+                }, true);
                 break;
             case 'tool_args_buffering':
                 live.phase.textContent = `· preparing ${status.name || 'tool'}`;
@@ -339,27 +410,56 @@
         }
     }
 
-    function renderStats(stats) {
-        if (!stats) { dom.turnStat.textContent = ''; return; }
+    // `live` marks a mid-generation update: throughput leads, because it is the
+    // number that moves and the one worth watching. The final call keeps the
+    // familiar order and adds elapsed time.
+    function renderStats(stats, isLive = false) {
+        if (!stats) { dom.turnStat.textContent = ''; dom.turnStat.classList.remove('is-live'); return; }
         const bits = [];
-        if (stats.tokens) bits.push(`${stats.tokens} tok`);
-        if (stats.tokensPerSecond) bits.push(`${Number(stats.tokensPerSecond).toFixed(1)} tok/s`);
-        if (stats.durationMs) bits.push(`${(stats.durationMs / 1000).toFixed(1)}s`);
+        const tps = Number(stats.tokensPerSecond) || 0;
+        if (isLive) {
+            if (tps) bits.push(`${tps.toFixed(1)} tok/s`);
+            if (stats.tokens) bits.push(`${stats.tokens} tok`);
+        } else {
+            if (stats.tokens) bits.push(`${stats.tokens} tok`);
+            if (tps) bits.push(`${tps.toFixed(1)} tok/s`);
+            if (stats.durationMs) bits.push(`${(stats.durationMs / 1000).toFixed(1)}s`);
+        }
         dom.turnStat.textContent = bits.join(' · ');
+        dom.turnStat.classList.toggle('is-live', isLive && bits.length > 0);
     }
 
     /* ── STATUS ────────────────────────────────────────────────────────── */
 
-    async function refreshStatus() {
-        dom.statusDot.className = 'dot busy';
-        dom.statusText.textContent = 'checking…';
+    // A turn in flight is the best possible proof the backend is up, and the
+    // worst possible moment to ask it for anything else: a local server busy
+    // decoding a 27B often cannot answer /v1/models promptly, and llama.cpp
+    // serialises requests outright. Polling through a generation is how the UI
+    // used to declare a perfectly healthy backend dead, mid-answer.
+    //
+    // `manual` marks a click on the status pill — that always checks, and
+    // always reports what it found.
+    async function refreshStatus(manual = false) {
+        if (!manual && TricorderLLM.isProcessing) return;
+
+        // Don't blank a good status while re-checking in the background; the
+        // flicker reads as instability that isn't there.
+        if (manual || !backendOnline) {
+            dom.statusDot.className = 'dot busy';
+            dom.statusText.textContent = 'checking…';
+        }
         try {
             const ok = await TricorderLLM.checkConnection();
-            backendOnline = !!ok;
             if (!ok) {
-                offline();
+                // One missed probe is a blip, not an outage. Only give up after
+                // several in a row, so a busy moment cannot take the composer
+                // away from someone whose backend is fine.
+                offlineStrikes += 1;
+                if (manual || offlineStrikes >= OFFLINE_STRIKES) offline();
                 return;
             }
+            offlineStrikes = 0;
+            backendOnline = true;
             dom.statusDot.className = 'dot online';
             dom.send.disabled = false;
             // "auto" is what the config says, not what is actually answering.
@@ -374,7 +474,8 @@
             dom.statusText.textContent = label;
             dom.input.placeholder = 'Ask for something. It will use tools.';
         } catch {
-            offline();
+            offlineStrikes += 1;
+            if (manual || offlineStrikes >= OFFLINE_STRIKES) offline();
         }
     }
 
@@ -382,6 +483,7 @@
     // letting them write a paragraph and then meet a stack trace.
     function offline() {
         backendOnline = false;
+        offlineStrikes = 0;
         dom.statusDot.className = 'dot offline';
         dom.statusText.textContent = 'no model server';
         dom.send.disabled = true;
@@ -736,7 +838,7 @@
         $('btn-new').addEventListener('click', newChat);
         $('panel-close').addEventListener('click', closePanel);
         dom.scrim.addEventListener('click', closePanel);
-        $('status-pill').addEventListener('click', refreshStatus);
+        $('status-pill').addEventListener('click', () => refreshStatus(true));
         document.querySelectorAll('.tab').forEach((t) => {
             t.addEventListener('click', () => selectTab(t.dataset.tab));
         });
@@ -749,12 +851,43 @@
         // Copy buttons inside rendered code blocks (delegated — blocks are
         // re-rendered on every streamed chunk).
         dom.transcript.addEventListener('click', (ev) => {
-            if (!ev.target.matches('[data-copy]')) return;
-            const pre = ev.target.closest('.code-block').querySelector('code');
-            navigator.clipboard.writeText(pre.textContent).then(
-                () => toast('Copied.'),
-                () => toast('Could not copy.')
-            );
+            const block = ev.target.closest('.code-block, .canvas-block');
+            if (!block) return;
+
+            if (ev.target.matches('[data-copy]')) {
+                const code = block.querySelector('code');
+                if (!code) return;
+                navigator.clipboard.writeText(code.textContent).then(
+                    () => toast('Copied.'),
+                    () => toast('Could not copy.')
+                );
+                return;
+            }
+
+            // Flip a live canvas between the rendered result and the source
+            // that produced it. Both are already in the DOM; only visibility
+            // changes, so the iframe is never torn down and re-run.
+            if (ev.target.matches('[data-canvas-toggle]')) {
+                const frame = block.querySelector('.canvas-frame');
+                const src = block.querySelector('.canvas-source');
+                const showingSource = !src.hidden;
+                src.hidden = showingSource;
+                frame.hidden = !showingSource;
+                ev.target.textContent = showingSource ? 'source' : 'preview';
+                return;
+            }
+
+            // Open the rendered page full-size in its own tab. It goes through
+            // a blob URL, which keeps it on an opaque origin — the same
+            // isolation the sandboxed frame gives it inline.
+            if (ev.target.matches('[data-canvas-open]')) {
+                const code = block.querySelector('code');
+                if (!code) return;
+                const blob = new Blob([code.textContent], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank', 'noopener');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
         });
     }
 
