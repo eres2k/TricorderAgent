@@ -851,12 +851,43 @@
         // Copy buttons inside rendered code blocks (delegated — blocks are
         // re-rendered on every streamed chunk).
         dom.transcript.addEventListener('click', (ev) => {
-            if (!ev.target.matches('[data-copy]')) return;
-            const pre = ev.target.closest('.code-block').querySelector('code');
-            navigator.clipboard.writeText(pre.textContent).then(
-                () => toast('Copied.'),
-                () => toast('Could not copy.')
-            );
+            const block = ev.target.closest('.code-block, .canvas-block');
+            if (!block) return;
+
+            if (ev.target.matches('[data-copy]')) {
+                const code = block.querySelector('code');
+                if (!code) return;
+                navigator.clipboard.writeText(code.textContent).then(
+                    () => toast('Copied.'),
+                    () => toast('Could not copy.')
+                );
+                return;
+            }
+
+            // Flip a live canvas between the rendered result and the source
+            // that produced it. Both are already in the DOM; only visibility
+            // changes, so the iframe is never torn down and re-run.
+            if (ev.target.matches('[data-canvas-toggle]')) {
+                const frame = block.querySelector('.canvas-frame');
+                const src = block.querySelector('.canvas-source');
+                const showingSource = !src.hidden;
+                src.hidden = showingSource;
+                frame.hidden = !showingSource;
+                ev.target.textContent = showingSource ? 'source' : 'preview';
+                return;
+            }
+
+            // Open the rendered page full-size in its own tab. It goes through
+            // a blob URL, which keeps it on an opaque origin — the same
+            // isolation the sandboxed frame gives it inline.
+            if (ev.target.matches('[data-canvas-open]')) {
+                const code = block.querySelector('code');
+                if (!code) return;
+                const blob = new Blob([code.textContent], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank', 'noopener');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
         });
     }
 

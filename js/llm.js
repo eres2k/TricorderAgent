@@ -661,7 +661,7 @@ LONG-RUNNING WORK: run it with agent_spawn — Tricorder announces completion or
 
 ## CODING
 Thinking is a scratchpad — the COMPLETE code must land in the visible reply or a tool call; code only in reasoning was never delivered. ONE channel per artifact:
-1. LIVE CANVAS — demos/UI/games/visualizations: one self-contained fenced \`html\` (or \`svg\`/\`js\`) block, NO file= attribute, all CSS/JS inline, no external libs. Renders live in chat.
+1. LIVE CANVAS — demos/UI/games/visualizations: one self-contained fenced \`html\` or \`svg\` block, NO file= attribute, all CSS/JS inline, no external libs (the frame is sandboxed and offline — a CDN link will simply not load). Renders live in chat, with a source/preview toggle.
 2. FILE BLOCK — files for disk: one fenced block per file, path on the info line (\`\`\`html file=~/tricorder-workspace/code/app.html), complete content any size — streams live, auto-saves on close. Don't also write_file the same content; content must not contain a bare \`\`\` line (then use chunked write_file). Surgical edits → file_edit. Afterwards summarize in 1-3 sentences.
 3. CODE EXECUTION — verify by running (run_command/code_exec); report ACTUAL output.
 4. PLAIN fenced block + language tag for snippets to copy.

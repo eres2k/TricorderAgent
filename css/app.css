@@ -426,6 +426,34 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
    the bottom, so what you see is the line being written. */
 .code-block.is-streaming pre { max-height: 34vh; }
 
+/* ── LIVE CANVAS ──────────────────────────────────────────────────────── */
+/* A self-contained html/svg block renders instead of being read. The frame is
+   sandboxed without allow-same-origin, so scripts run in an opaque origin with
+   no reach into this page. */
+.canvas-block {
+    margin: 0 0 13px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--bg-sunk);
+}
+.canvas-actions { display: flex; gap: 2px; }
+.canvas-frame {
+    display: block; width: 100%; height: 420px;
+    border: 0; background: #fff;
+    resize: vertical;
+}
+.canvas-source {
+    margin: 0; padding: 12px 13px;
+    max-height: 60vh; overflow: auto;
+    background: var(--bg-sunk);
+}
+.canvas-source code { background: none; padding: 0; color: var(--text); font-size: 12.5px; line-height: 1.6; }
+
+@media (max-width: 560px) {
+    .canvas-frame { height: 300px; }
+}
+
 /* ── THINKING ─────────────────────────────────────────────────────────── */
 .think {
     margin-bottom: 11px;
