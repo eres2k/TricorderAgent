@@ -8,7 +8,7 @@ const registry = require('../../server/tools');
 // or into the browser-side mirror — fails here rather than at runtime.
 const EXPECTED_TOOLS = [
     'git_operations', 'process_manager', 'sqlite_manager',
-    'code_linter', 'archive_tool', 'dev_server', 'rss_reader',
+    'code_linter', 'archive_tool', 'dev_server', 'rss_reader', 'send_email',
 ];
 
 test('registry exposes exactly the expected tools, with valid shapes', () => {

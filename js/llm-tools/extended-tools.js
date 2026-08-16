@@ -341,6 +341,72 @@
                     ]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "send_email",
+                "description": "Send an email over the configured SMTP account. Actions: send(to, subject, body — optionally html, cc, bcc, attachments), check_config (verify settings and log in without sending). Useful for delivering the result of a scheduled or long-running task, since the operator is not watching the chat when those run. Requires SMTP_HOST in .env; check_config reports exactly what is missing.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "send",
+                                "check_config"
+                            ]
+                        },
+                        "to": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Recipient address(es). A single string is accepted too."
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Subject line"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Plain-text body. Always send this; it is the fallback for html."
+                        },
+                        "html": {
+                            "type": "string",
+                            "description": "Optional HTML body. When present, body is sent alongside it as the plain-text alternative."
+                        },
+                        "cc": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Carbon-copy recipients"
+                        },
+                        "bcc": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Blind carbon-copy recipients"
+                        },
+                        "attachments": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "File paths to attach. Must be inside the allowed directories; 10 MB total."
+                        },
+                        "reply_to": {
+                            "type": "string",
+                            "description": "Reply-To address, if it differs from the sender"
+                        }
+                    },
+                    "required": [
+                        "action"
+                    ]
+                }
+            }
         }
     ];
 

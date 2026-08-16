@@ -3,6 +3,15 @@
     "version": "1.0.0",
     "description": "A local-first AI agent with real tools \u2014 files, shell, web, code \u2014 running entirely on your own machine. Zero npm dependencies.",
     "license": "MIT",
+    "author": "eres2k (Erwin Esener) <erwin.esener@gmail.com>",
+    "homepage": "https://eres2k.github.io/TricorderAgent/",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eres2k/TricorderAgent.git"
+    },
+    "bugs": {
+        "url": "https://github.com/eres2k/TricorderAgent/issues"
+    },
     "engines": {
         "node": ">=20"
     },

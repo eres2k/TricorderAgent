@@ -1,6 +1,6 @@
 # Extended Tools
 
-Seven native agent tools, one self-contained module per file. Each module
+Eight native agent tools, one self-contained module per file. Each module
 exports `{ name, schema, execute }` plus an optional `timeoutMs`:
 
 - **`schema`** — an OpenAI-compatible function-calling definition. The browser
@@ -138,6 +138,26 @@ _Python: feedparser._
 { "action": "add_feed", "feed_url": "https://news.ycombinator.com/rss" }
 { "action": "get_new_since", "feed_url": "https://news.ycombinator.com/rss", "limit": 10 }
 { "action": "search_feeds", "keyword": "rust" }
+```
+
+### 8. `send_email`
+Actions: `send, check_config`. Speaks SMTP directly over `net`/`tls` — EHLO,
+STARTTLS, AUTH LOGIN, MAIL FROM, RCPT TO, DATA — so it stays zero-dependency.
+Builds RFC 5322 messages with MIME parts for HTML bodies and attachments;
+subjects are RFC 2047 encoded, bodies are dot-stuffed, and `bcc` rides the
+envelope only — never the headers, and never the tool result.
+
+Inert until `SMTP_HOST` is set, and `check_config` reports exactly which
+variables are missing. `SMTP_ALLOWED_RECIPIENTS` is enforced per address
+(whole address, or a bare `@domain`), which is what makes it safe to hand to a
+task that runs while nobody is watching. `send` is classified as mutating, so
+plan mode blocks it and the approval gate stops it like a file write.
+Attachments resolve through the same sandbox as every other path, 10 MB total.
+
+```json
+{ "action": "check_config" }
+{ "action": "send", "to": ["me@example.com"], "subject": "Nightly report", "body": "Two things happened." }
+{ "action": "send", "to": ["me@example.com"], "subject": "Chart", "html": "<p>See attached</p>", "attachments": ["~/tricorder-agent-workspace/data/report.csv"] }
 ```
 
 ## Dependencies

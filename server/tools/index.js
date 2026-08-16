@@ -30,6 +30,7 @@ const MODULES = [
     require('./archive_tool'),
     require('./dev_server'),
     require('./rss_reader'),
+    require('./send_email'),
 ];
 
 const byName = new Map();
@@ -58,6 +59,9 @@ const MUTATING_ACTIONS = {
     archive_tool: ['create_zip', 'extract'],
     dev_server: ['start', 'stop'],
     rss_reader: ['add_feed', 'remove_feed', 'get_new_since'],
+    // Sending is irreversible and leaves the machine — the sharpest
+    // mutation in the registry. check_config only logs in.
+    send_email: ['send'],
 };
 
 // Raw SQL statements that only read. Anything else (INSERT/UPDATE/DDL/…)
