@@ -49,6 +49,8 @@ const TricorderToolIndex = (() => {
           keywords: 'process processes kill pid ps running stop terminate manage service' },
         { id: 'sqlite', label: 'SQLITE DATABASE', names: ['sqlite_manager'],
           keywords: 'sqlite database db sql query table schema insert select store structured data' },
+        { id: 'email', label: 'SEND EMAIL', names: ['send_email'],
+          keywords: 'email mail send smtp inbox message notify notification report deliver digest summary attach attachment recipient subject gmail reply schedule daily weekly' },
         { id: 'rss', label: 'RSS READER', names: ['rss_reader'],
           keywords: 'rss feed feeds atom news subscribe headlines articles' },
         { id: 'lint', label: 'CODE LINTER', names: ['code_linter'],

@@ -53,11 +53,40 @@ dependencies.
 | **Previews** | serve a page it just wrote on a live-reload dev server and hand you the link |
 | **Databases** | create and query SQLite |
 | **Memory** | remember facts about you and your projects, ranked by relevance and injected into its own prompt |
-| **Scheduling** | cron-style tasks and reminders that run without you |
+| **Scheduling** | recurring multi-step work — cron-style, or "keep checking until X is true", then delete itself |
+| **Email** | send results over SMTP, with attachments — how a task reaches you when you aren't watching |
 | **Sub-agents** | spawn background agents for long work and collect their results |
 
 It plans before it acts, asks before it writes files or runs commands (you can
 turn that off), and shows you every tool call as it happens.
+
+---
+
+## Work that runs without you
+
+The tools above are more interesting once nobody is watching. Ask for something
+recurring in plain language and it lands in the Tasks panel:
+
+> *"Every weekday at 07:00, pull the overnight CI failures from my repos, group
+> them by which test broke, and email me the summary."*
+
+That is one task doing five things — a schedule, a multi-step tool chain, its
+own judgement about grouping, a written artifact, and delivery. It runs whether
+or not the browser is open, and it uses the same tool layer and the same
+approval rules as a live conversation.
+
+Two kinds of schedule, because "every morning" is not the only shape work
+comes in:
+
+| | |
+|---|---|
+| **Cron** | fixed times — every weekday at 07:00, the 1st of the month, every four hours |
+| **Until a condition holds** | *"check every 20 minutes until the deploy is green, then tell me"* — it re-checks, reports progress, and **deletes itself** the moment the condition is true. A watchdog you have to clean up afterwards is a bug. |
+
+Results reach you by email (`send_email`, plain SMTP with attachments), or by
+writing a file, or by waiting in the chat. Email is off until you configure
+`SMTP_HOST`; set `SMTP_ALLOWED_RECIPIENTS` to your own address and a scheduled
+task can never mail anyone else.
 
 ---
 
@@ -230,6 +259,9 @@ The settings you're most likely to touch. See `.env.example` for all of them.
 | `SHELL_ENABLED` | `true` | `false` removes `run_command` entirely |
 | `CODE_EXEC_ENABLED` | `true` | Docker sandbox for `code_exec` |
 | `PUBLIC_URL` | — | Public origin, for shareable preview links |
+| `SMTP_HOST` | — | Mail relay for `send_email`. Empty = the tool stays inert |
+| `SMTP_USER` / `SMTP_PASS` | — | Credentials. Gmail needs an App Password |
+| `SMTP_ALLOWED_RECIPIENTS` | — | Who the agent may mail — address or `@domain`. Empty = anywhere |
 | `LOG_LEVEL` | `INFO` | `DEBUG` · `INFO` · `WARN` · `ERROR` |
 
 ---
@@ -308,6 +340,12 @@ This is the public, stripped-down build of a larger private project. The agent
 engine, tool layer, and server are the same lineage; the personal integrations
 (mail, calendar, messaging, smart home, media generation, speech) are not part
 of this build, and neither is anything specific to one person's setup.
+
+## Author
+
+**eres2k** (Erwin Esener) — <erwin.esener@gmail.com>
+[github.com/eres2k](https://github.com/eres2k) ·
+[Issues](https://github.com/eres2k/TricorderAgent/issues)
 
 ## License
 

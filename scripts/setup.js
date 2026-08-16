@@ -115,9 +115,108 @@ function createReport() {
 
 const MARK = { ok: () => c.green('✓'), info: () => c.dim('·'), warn: () => c.yellow('!'), fail: () => c.red('✗') };
 
-function say(level, msg) { console.log(`  ${MARK[level]()} ${msg}`); }
-function heading(n, title) { console.log(`\n${c.bold(`${n}. ${title}`)}`); }
-function code(block) { console.log(block.split('\n').map((l) => `      ${c.cyan(l)}`).join('\n')); }
+/* ── Presentation ─────────────────────────────────────────────────────────
+   This is the first thing anyone sees of the project, and for the two minutes
+   it runs it IS the product. So it gets the same care as the app: a fixed
+   measure, real hierarchy, and prose that wraps instead of running off the
+   right edge of an 80-column terminal.
+
+   Everything degrades cleanly. Colour is already conditional on a TTY and
+   NO_COLOR; the box drawing below is plain ASCII-adjacent Unicode that
+   Windows Terminal, macOS and every Linux console render, and --json prints
+   none of it. */
+
+const WIDTH = 70;          // the measure, in columns
+const GUTTER = '   ';      // indent for findings
+
+// Wrap on words at `width`, so a long finding becomes a paragraph instead of
+// a line that wraps wherever the terminal happens to end.
+function wrapText(text, width) {
+    const out = [];
+    for (const para of String(text).split('\n')) {
+        let line = '';
+        for (const word of para.split(/\s+/).filter(Boolean)) {
+            if (!line) { line = word; continue; }
+            if ((line + ' ' + word).length <= width) line += ' ' + word;
+            else { out.push(line); line = word; }
+        }
+        out.push(line);
+    }
+    return out.length ? out : [''];
+}
+
+// Findings carry weight in their colour, not just in their mark: an `info` is
+// context you may skim, a `warn` is something to read. Dimming the first and
+// not the second is what makes a wall of output scannable.
+const TONE = { ok: (s) => s, info: (s) => c.dim(s), warn: (s) => c.yellow(s), fail: (s) => c.red(s) };
+
+function say(level, msg) {
+    const lines = wrapText(msg, WIDTH - GUTTER.length - 2);
+    console.log(`${GUTTER}${MARK[level]()} ${TONE[level](lines[0])}`);
+    for (const rest of lines.slice(1)) console.log(`${GUTTER}  ${TONE[level](rest)}`);
+}
+
+function banner(subtitle) {
+    const top = '╭' + '─'.repeat(WIDTH - 2) + '╮';
+    const bot = '╰' + '─'.repeat(WIDTH - 2) + '╯';
+    const row = (plain, painted) => {
+        const pad = ' '.repeat(Math.max(0, WIDTH - 4 - plain.length));
+        return `│ ${painted}${pad} │`;
+    };
+    console.log('');
+    console.log(c.dim(top));
+    console.log(c.dim(row('◈  TRICORDER AGENT', `${c.yellow('◈')}  ${c.bold('TRICORDER AGENT')}`)));
+    console.log(c.dim(row(`   ${subtitle}`, c.dim(`   ${subtitle}`))));
+    console.log(c.dim(bot));
+}
+
+// A stage rule that also says where you are in the run. "3/7" is the whole
+// progress indicator — anything more elaborate fights with the findings.
+function heading(n, title) {
+    const label = ` ${n}/7  ${title.toUpperCase()} `;
+    const bar = '─'.repeat(Math.max(2, WIDTH - label.length - 4));
+    console.log('');
+    console.log(`  ${c.dim('──')}${c.bold(label)}${c.dim(bar)}`);
+}
+
+// Commands get a left rail so they read as one block to copy, distinct from
+// the prose around them.
+function code(block) {
+    for (const line of block.split('\n')) {
+        console.log(`${GUTTER}${c.dim('│')} ${c.cyan(line)}`);
+    }
+}
+
+// A closing box, tinted by outcome. paint() colours the border only — the
+// lines inside arrive already styled.
+function box(lines, paint = (s) => s) {
+    const top = '╭' + '─'.repeat(WIDTH - 2) + '╮';
+    const bot = '╰' + '─'.repeat(WIDTH - 2) + '╯';
+    console.log(paint(top));
+    for (const { plain, painted } of lines) {
+        const pad = ' '.repeat(Math.max(0, WIDTH - 4 - plain.length));
+        console.log(`${paint('│')} ${painted}${pad} ${paint('│')}`);
+    }
+    console.log(paint(bot));
+}
+
+// A live indicator for the stages that wait on the network. Silent unless
+// stdout is a terminal, so logs and CI stay clean.
+function spinner(label) {
+    if (!COLOR || !process.stdout.isTTY) return { stop() {} };
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let i = 0;
+    const timer = setInterval(() => {
+        process.stdout.write(`\r${GUTTER}${c.cyan(frames[i++ % frames.length])} ${c.dim(label)}`);
+    }, 80);
+    timer.unref?.();
+    return {
+        stop() {
+            clearInterval(timer);
+            process.stdout.write('\r' + ' '.repeat(GUTTER.length + label.length + 4) + '\r');
+        },
+    };
+}
 
 /* ── .env handling ────────────────────────────────────────────────────────── */
 
@@ -430,10 +529,9 @@ async function run(argv) {
     const quiet = opts.json;
 
     if (!quiet) {
-        console.log(`\n${c.bold('Tricorder Agent — setup')}`);
-        console.log(c.dim(opts.check
+        banner(opts.check
             ? 'Diagnosing. Nothing will be written.'
-            : `Target model: ${profiles.RECOMMENDED.label}`));
+            : `Setup · targeting ${profiles.RECOMMENDED.label}`);
     }
 
     /* 1 ── Host ---------------------------------------------------------- */
@@ -533,9 +631,14 @@ async function run(argv) {
             for (const b of backends.KNOWN_BACKENDS) {
                 console.log(`\n  ${c.bold(b.label)} ${c.dim(b.docs)}`);
                 for (const step of profiles.launchPlan(b.id, { profile, contextTokens, quant: showQuant, vision: wantVision, mtp: memory.budgetGiB >= 24 })) {
-                    console.log(`    ${step.title}:`);
+                    console.log(`   ${c.dim(step.title + ':')}`);
                     code(step.code);
-                    console.log(`      ${c.dim(step.note)}`);
+                    // These notes are the most important prose in the whole
+                    // script — "--jinja is not optional" is the difference
+                    // between a working agent and a chatbot — so they wrap to
+                    // the measure like everything else instead of trailing off
+                    // the right edge.
+                    for (const l of wrapText(step.note, WIDTH - 7)) console.log(`     ${c.dim(l)}`);
                 }
             }
         }
@@ -602,7 +705,13 @@ async function run(argv) {
         }
         caps.context = ctx;
 
-        const tools = await probeToolCalling(chosen.url, model, { apiKey });
+        // The one genuinely slow step: a real generation on a local model,
+        // which on modest hardware is tens of seconds. Without a sign of life
+        // it reads as a hang, and people kill it.
+        const spin = quiet ? { stop() {} } : spinner(`asking ${model} to call a tool — this is a real request…`);
+        let tools;
+        try { tools = await probeToolCalling(chosen.url, model, { apiKey }); }
+        finally { spin.stop(); }
         if (tools.mode === 'native') {
             report.ok('capability', `Tool calling: native (the model called ${tools.toolName})`);
         } else if (tools.mode === 'xml-fallback') {
@@ -685,7 +794,10 @@ async function run(argv) {
             report.info('config', 'Left .env alone. Settings in the browser override it anyway.');
         }
     }
-    out.stages.config = { changes };
+    // The closing box tells the operator which URL to open, so it needs the
+    // port that will actually be served — the one just chosen, else whatever
+    // .env already said, else the default.
+    out.stages.config = { changes, port: parseInt(patch.PORT || envNow.get('PORT') || '3000', 10) || 3000 };
     if (!quiet) flush(report, 'config');
 
     /* 6 ── Workspace ----------------------------------------------------- */
@@ -744,18 +856,44 @@ function finish(report, out, opts, exitCode) {
 
     const fails = report.findings.filter((f) => f.level === 'fail');
     const warns = report.findings.filter((f) => f.level === 'warn');
+    const port = out.stages?.config?.port || 3000;
+    const url = `http://localhost:${port}`;
+
+    // One line per item, carrying its own styling — box() only paints the
+    // border, because it cannot measure a string that already has escapes in
+    // it.
+    const lines = [];
+    const put = (plain, painted) => lines.push({ plain, painted: painted ?? plain });
+    const blank = () => put('', '');
 
     console.log('');
-    if (!fails.length && !warns.length) {
-        console.log(c.green(c.bold('  Ready.')) + ' Run ' + c.cyan('npm start') + ' and open http://localhost:3000');
-    } else if (!fails.length) {
-        console.log(c.yellow(c.bold(`  Ready, with ${warns.length} thing(s) worth knowing.`)));
-        for (const w of warns) console.log(`    ${c.yellow('!')} ${w.msg}`);
-        console.log(`\n  Run ${c.cyan('npm start')} and open http://localhost:3000`);
+    if (!fails.length) {
+        const headline = warns.length
+            ? `Ready — with ${warns.length} thing${warns.length > 1 ? 's' : ''} worth knowing.`
+            : 'Ready.';
+        put(`✓  ${headline}`, `${c.green('✓')}  ${c.bold(headline)}`);
+        for (const w of warns) {
+            blank();
+            for (const [i, l] of wrapText(w.msg, WIDTH - 8).entries()) {
+                put(`   ${i === 0 ? '! ' : '  '}${l}`, `   ${i === 0 ? c.yellow('!') + ' ' : '  '}${c.dim(l)}`);
+            }
+        }
+        blank();
+        put(`   Start it:  npm start`, `   ${c.dim('Start it:')}  ${c.cyan('npm start')}`);
+        put(`   Then open: ${url}`, `   ${c.dim('Then open:')} ${c.cyan(url)}`);
+        box(lines, warns.length ? c.yellow : c.green);
     } else {
-        console.log(c.red(c.bold(`  ${fails.length} problem(s) to fix first:`)));
-        for (const f of fails) console.log(`    ${c.red('✗')} ${f.msg}`);
-        console.log(`\n  Fix those, then run ${c.cyan('npm run setup')} again.`);
+        const headline = `${fails.length} problem${fails.length > 1 ? 's' : ''} to fix first.`;
+        put(`✗  ${headline}`, `${c.red('✗')}  ${c.bold(headline)}`);
+        for (const f of fails) {
+            blank();
+            for (const [i, l] of wrapText(f.msg, WIDTH - 8).entries()) {
+                put(`   ${i === 0 ? '• ' : '  '}${l}`, `   ${i === 0 ? c.red('•') + ' ' : '  '}${l}`);
+            }
+        }
+        blank();
+        put('   Then run:  npm run setup', `   ${c.dim('Then run:')}  ${c.cyan('npm run setup')}`);
+        box(lines, c.red);
     }
     console.log('');
     return exitCode;
