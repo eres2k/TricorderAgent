@@ -5350,7 +5350,9 @@ async function handleToolExecApi(req, res, reqId) {
     }
 }
 
-// --- Speech-to-Text API (Whisper) ---
+// --- Request body reader ---
+// Buffers a whole request body with a hard ceiling, so a large or hostile
+// upload fails fast instead of growing until the process dies.
 function readRawBody(req, maxBytes = 25 * 1024 * 1024) {
     return new Promise((resolve, reject) => {
         const chunks = [];

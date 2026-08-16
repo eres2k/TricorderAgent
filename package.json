@@ -9,7 +9,7 @@
     "scripts": {
         "setup": "node scripts/setup.js",
         "doctor": "node scripts/setup.js --check",
-        "start": "node scripts/stamp-version.js && node server.js",
+        "start": "node scripts/start.js",
         "dev": "node server.js",
         "build:tools": "node scripts/gen-extended-tools.js",
         "lint": "node scripts/check-refs.js",
