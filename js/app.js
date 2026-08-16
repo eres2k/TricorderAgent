@@ -170,7 +170,10 @@
             live.md.innerHTML = '<em style="color:var(--text-dim)">No reply.</em>';
         }
         // Collapse the thinking block once the answer is there.
-        if (live.think && live.think.open) live.think.open = false;
+        if (live.think) {
+            live.think.classList.remove('streaming');
+            live.think.open = false;
+        }
         // …and the tool log too. Once the turn is finished the calls are
         // evidence rather than progress: worth keeping, not worth the space.
         // A click reopens the whole list, uncapped.
@@ -363,12 +366,17 @@
                 if (status.content) {
                     live.settle();
                     live.think.hidden = false;
+                    // Stay expanded while the reasoning streams — watching it
+                    // scroll is the point. It collapses when the turn ends.
+                    live.think.open = true;
+                    live.think.classList.add('streaming');
                     live.thinkBody.textContent = status.content;
                     live.thinkBody.scrollTop = live.thinkBody.scrollHeight;
                 }
                 break;
             case 'generating':
                 live.phase.textContent = '· writing';
+                live.think.classList.remove('streaming');
                 break;
             case 'gen_progress':
                 // Live throughput. The backend reports real timings when it
